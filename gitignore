@@ -1,0 +1,29 @@
+# Build outputs
+*.o
+*.elf
+*.img
+*.bin
+*.hex
+
+# Disassembly
+*.disasm
+*.list
+*.map
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.orig
+
+# Debug files
+*.dSYM/
