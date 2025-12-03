@@ -1,0 +1,6 @@
+# Boot our kernel
+kernel=kernel.img
+# Disable rainbow splash
+disable_splash=1
+# Set ARM in 32-bit mode
+arm_64bit=0
