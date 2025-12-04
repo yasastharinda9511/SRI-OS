@@ -1,13 +1,13 @@
-#include "drivers/uart.h"
-#include "kernel/interrupts.h"
-#include "shell/shell.h"
+#include "../drivers/uart.h"
+#include "interrupts.h"
+#include "shell.h"
 
 void kernel_main(void) {
     uart_init();
 
     uart_puts("\n");
     uart_puts("================================\n");
-    uart_puts("  Pi Zero Bare Metal SRI OS\n");
+    uart_puts("  Pi Zero Bare Metal OS\n");
     uart_puts("================================\n\n");
 
     // Initialize interrupts and timer

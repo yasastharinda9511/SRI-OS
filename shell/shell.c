@@ -1,6 +1,6 @@
 #include "shell.h"
-#include "uart.h"
-#include "interrupts.h"
+#include "../drivers/uart.h"
+#include "../kernel/interrupts.h"
 
 // String comparison
 static int strcmp(const char* s1, const char* s2) {

@@ -6,41 +6,58 @@ LD = $(PREFIX)ld
 OBJCOPY = $(PREFIX)objcopy
 OBJDUMP = $(PREFIX)objdump
 
+# Directories
+BOOT_DIR = boot
+KERNEL_DIR = kernel
+DRIVERS_DIR = drivers
+SHELL_DIR = shell
+
 # Flags
 CFLAGS = -mcpu=arm1176jzf-s -O2 -ffreestanding -fno-pic -std=gnu99 -Wall -Wextra
+CFLAGS += -I$(KERNEL_DIR) -I$(DRIVERS_DIR) -I$(SHELL_DIR)
 ASFLAGS = -mcpu=arm1176jzf-s
 LDFLAGS = -nostdlib -T linker.ld
 
-# Files
-OBJS = boot.o vectors.o kernel.o uart.o interrupts.o shell.o
+# Object files
+OBJS = $(BOOT_DIR)/boot.o \
+       $(BOOT_DIR)/vectors.o \
+       $(KERNEL_DIR)/kernel.o \
+       $(KERNEL_DIR)/interrupts.o \
+       $(DRIVERS_DIR)/uart.o \
+       $(SHELL_DIR)/shell.o
 
 all: kernel.img
 
-boot.o: boot.S
-	$(AS) $(ASFLAGS) boot.S -o boot.o
+# Boot
+$(BOOT_DIR)/boot.o: $(BOOT_DIR)/boot.S
+	$(AS) $(ASFLAGS) $< -o $@
 
-vectors.o: vectors.S
-	$(AS) $(ASFLAGS) vectors.S -o vectors.o
+$(BOOT_DIR)/vectors.o: $(BOOT_DIR)/vectors.S
+	$(AS) $(ASFLAGS) $< -o $@
 
-kernel.o: kernel.c uart.h interrupts.h shell.h
-	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
+# Kernel
+$(KERNEL_DIR)/kernel.o: $(KERNEL_DIR)/kernel.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-uart.o: uart.c uart.h
-	$(CC) $(CFLAGS) -c uart.c -o uart.o
+$(KERNEL_DIR)/interrupts.o: $(KERNEL_DIR)/interrupts.c $(KERNEL_DIR)/interrupts.h
+	$(CC) $(CFLAGS) -c $< -o $@
 
-interrupts.o: interrupts.c interrupts.h uart.h
-	$(CC) $(CFLAGS) -c interrupts.c -o interrupts.o
+# Drivers
+$(DRIVERS_DIR)/uart.o: $(DRIVERS_DIR)/uart.c $(DRIVERS_DIR)/uart.h
+	$(CC) $(CFLAGS) -c $< -o $@
 
-shell.o: shell.c shell.h uart.h interrupts.h
-	$(CC) $(CFLAGS) -c shell.c -o shell.o
+# Shell
+$(SHELL_DIR)/shell.o: $(SHELL_DIR)/shell.c $(SHELL_DIR)/shell.h
+	$(CC) $(CFLAGS) -c $< -o $@
 
+# Linking
 kernel.elf: $(OBJS) linker.ld
 	$(LD) $(LDFLAGS) -o kernel.elf $(OBJS)
 
 kernel.img: kernel.elf
 	$(OBJCOPY) kernel.elf -O binary kernel.img
 
-# Useful targets
+# Utilities
 disasm: kernel.elf
 	$(OBJDUMP) -d kernel.elf > kernel.disasm
 
@@ -51,6 +68,10 @@ qemu-debug: kernel.elf
 	qemu-system-arm -M raspi0 -serial stdio -kernel kernel.elf -S -gdb tcp::1234
 
 clean:
-	rm -f *.o *.elf *.img *.disasm
+	rm -f $(BOOT_DIR)/*.o
+	rm -f $(KERNEL_DIR)/*.o
+	rm -f $(DRIVERS_DIR)/*.o
+	rm -f $(SHELL_DIR)/*.o
+	rm -f *.elf *.img *.disasm
 
 .PHONY: all clean disasm qemu qemu-debug
