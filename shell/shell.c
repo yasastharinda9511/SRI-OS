@@ -143,6 +143,107 @@ static void cmd_ls(void) {
     fs_list();
 }
 
+static void cmd_rm(const char* name) {
+    name = skip_spaces(name);
+    
+    if (name[0] == '\0') {
+        uart_puts("Usage: rm <filename>\n");
+        return;
+    }
+    
+    int result = fs_delete(name);
+    if (result == -1) {
+        uart_puts("File not found.\n");
+    }
+}
+
+
+static void cmd_cat(const char* name) {
+    name = skip_spaces(name);
+    
+    if (name[0] == '\0') {
+        uart_puts("Usage: cat <filename>\n");
+        return;
+    }
+    
+    char buf[MAX_FILESIZE];
+    int result = fs_read(name, buf, sizeof(buf));
+    
+    if (result < 0) {
+        uart_puts("File not found.\n");
+    } else if (result == 0) {
+        uart_puts("(empty file)\n");
+    } else {
+        uart_puts(buf);
+        uart_puts("\n");
+    }
+}
+
+static void cmd_write(const char* args) {
+    args = skip_spaces(args);
+    
+    // Parse: <filename> <content>
+    char name[MAX_FILENAME];
+    int i = 0;
+    
+    // Get filename
+    while (args[i] && args[i] != ' ' && i < MAX_FILENAME - 1) {
+        name[i] = args[i];
+        i++;
+    }
+    name[i] = '\0';
+    
+    if (name[0] == '\0') {
+        uart_puts("Usage: write <filename> <text>\n");
+        return;
+    }
+    
+    // Get content (skip space after filename)
+    const char* content = skip_spaces(args + i);
+    
+    if (fs_write(name, content) < 0) {
+        uart_puts("Error writing file.\n");
+    }
+}
+
+static void cmd_edit(const char* name) {
+    name = skip_spaces(name);
+    
+    if (name[0] == '\0') {
+        uart_puts("Usage: edit <filename>\n");
+        return;
+    }
+    
+    // Create file if doesn't exist
+    if (!fs_exists(name)) {
+        fs_create(name);
+    }
+    
+    // Show current contents
+    char buf[MAX_FILESIZE];
+    int len = fs_read(name, buf, sizeof(buf));
+    
+    uart_puts("\n");
+    uart_puts("=== Editing: ");
+    uart_puts(name);
+    uart_puts(" ===\n");
+    
+    if (len > 0) {
+        uart_puts("Current contents:\n");
+        uart_puts(buf);
+        uart_puts("\n");
+    }
+    
+    uart_puts("\nEnter new contents (single line, Enter to save):\n");
+    uart_puts("> ");
+    
+    char newdata[MAX_FILESIZE];
+    uart_readline(newdata, sizeof(newdata));
+    
+    fs_write(name, newdata);
+    uart_puts("File saved.\n");
+}
+
 // Process a command
 static void process_command(char* cmd) {
     // Skip empty commands
@@ -175,7 +276,18 @@ static void process_command(char* cmd) {
         cmd_ls();
     }
     else if (startswith(cmd, "touch ")) {
-        cmd_touch(cmd + 6);  // Skip "touch "
+        cmd_touch(cmd + 6);  
+    }else if (startswith(cmd, "rm ")) {
+        cmd_rm(cmd + 3);
+    }
+    else if (startswith(cmd, "cat ")) {
+        cmd_cat(cmd + 4);
+    }
+    else if (startswith(cmd, "write ")) {
+        cmd_write(cmd + 6);
+    }
+    else if (startswith(cmd, "edit ")) {
+        cmd_edit(cmd + 5);
     }
     else {
         cmd_unknown(cmd);
