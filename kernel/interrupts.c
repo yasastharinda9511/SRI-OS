@@ -1,5 +1,5 @@
 #include "interrupts.h"
-#include "uart.h"
+#include "../drivers/uart.h"
 
 volatile uint32_t timer_ticks = 0;
 static uint32_t next_tick_time = 0;

@@ -24,7 +24,8 @@ OBJS = $(BOOT_DIR)/boot.o \
        $(KERNEL_DIR)/kernel.o \
        $(KERNEL_DIR)/interrupts.o \
        $(DRIVERS_DIR)/uart.o \
-       $(SHELL_DIR)/shell.o
+       $(SHELL_DIR)/shell.o \
+	   $(KERNEL_DIR)/fs.o
 
 all: kernel.img
 
@@ -40,6 +41,9 @@ $(KERNEL_DIR)/kernel.o: $(KERNEL_DIR)/kernel.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(KERNEL_DIR)/interrupts.o: $(KERNEL_DIR)/interrupts.c $(KERNEL_DIR)/interrupts.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(KERNEL_DIR)/fs.o: $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/fs.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Drivers

@@ -1,6 +1,7 @@
 #include "shell.h"
 #include "../drivers/uart.h"
 #include "../kernel/interrupts.h"
+#include "../kernel/fs.h"
 
 // String comparison
 static int strcmp(const char* s1, const char* s2) {
@@ -21,6 +22,14 @@ static int startswith(const char* str, const char* prefix) {
     return 1;
 }
 
+// Skip leading spaces
+static const char* skip_spaces(const char* str) {
+    while (*str == ' ') {
+        str++;
+    }
+    return str;
+}
+
 // Command handlers
 static void cmd_help(void) {
     uart_puts("\n");
@@ -31,6 +40,17 @@ static void cmd_help(void) {
     uart_puts("  echo     - Echo text (usage: echo hello)\n");
     uart_puts("  clear    - Clear screen\n");
     uart_puts("  reboot   - Reboot system\n");
+    uart_puts("\n");
+    uart_puts("  Files:\n");
+    uart_puts("    ls         - List files\n");
+    uart_puts("    touch      - Create file (touch <name>)\n");
+    uart_puts("    rm         - Delete file (rm <name>)\n");
+    uart_puts("    cat        - Show file contents (cat <name>)\n");
+    uart_puts("    write      - Write to file (write <name> <text>)\n");
+    uart_puts("    edit       - Edit file interactively (edit <name>)\n");
+    uart_puts("\n");
+    uart_puts("  Other:\n");
+    uart_puts("    echo       - Echo text (echo <text>)\n");
     uart_puts("\n");
 }
 
@@ -103,6 +123,26 @@ static void cmd_unknown(const char* cmd) {
     uart_puts("\nType 'help' for available commands.\n");
 }
 
+static void cmd_touch(const char* name) {
+    name = skip_spaces(name);
+    
+    if (name[0] == '\0') {
+        uart_puts("Usage: touch <filename>\n");
+        return;
+    }
+    
+    int result = fs_create(name);
+    if (result == -1) {
+        uart_puts("File already exists.\n");
+    } else if (result == -2) {
+        uart_puts("Error: No space for new files.\n");
+    }
+}
+
+static void cmd_ls(void) {
+    fs_list();
+}
+
 // Process a command
 static void process_command(char* cmd) {
     // Skip empty commands
@@ -130,6 +170,12 @@ static void process_command(char* cmd) {
     }
     else if (strcmp(cmd, "reboot") == 0) {
         cmd_reboot();
+    }
+    else if (strcmp(cmd, "ls") == 0) {
+        cmd_ls();
+    }
+    else if (startswith(cmd, "touch ")) {
+        cmd_touch(cmd + 6);  // Skip "touch "
     }
     else {
         cmd_unknown(cmd);

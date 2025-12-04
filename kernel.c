@@ -1,6 +1,7 @@
 #include "drivers/uart.h"
 #include "kernel/interrupts.h"
 #include "shell/shell.h"
+#include "kernel/fs.h"
 
 void kernel_main(void) {
     uart_init();
@@ -14,6 +15,7 @@ void kernel_main(void) {
     interrupts_init();
     timer_init();
     enable_irq();
+    fs_init();
 
     uart_puts("System initialized.\n");
 
