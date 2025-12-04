@@ -12,7 +12,7 @@ ASFLAGS = -mcpu=arm1176jzf-s
 LDFLAGS = -nostdlib -T linker.ld
 
 # Files
-OBJS = boot.o vectors.o kernel.o uart.o interrupts.o
+OBJS = boot.o vectors.o kernel.o uart.o interrupts.o shell.o
 
 all: kernel.img
 
@@ -22,7 +22,7 @@ boot.o: boot.S
 vectors.o: vectors.S
 	$(AS) $(ASFLAGS) vectors.S -o vectors.o
 
-kernel.o: kernel.c uart.h interrupts.h
+kernel.o: kernel.c uart.h interrupts.h shell.h
 	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
 
 uart.o: uart.c uart.h
@@ -30,6 +30,9 @@ uart.o: uart.c uart.h
 
 interrupts.o: interrupts.c interrupts.h uart.h
 	$(CC) $(CFLAGS) -c interrupts.c -o interrupts.o
+
+shell.o: shell.c shell.h uart.h interrupts.h
+	$(CC) $(CFLAGS) -c shell.c -o shell.o
 
 kernel.elf: $(OBJS) linker.ld
 	$(LD) $(LDFLAGS) -o kernel.elf $(OBJS)

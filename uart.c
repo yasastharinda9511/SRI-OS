@@ -80,3 +80,41 @@ void uart_puthex(unsigned int num) {
         uart_putc(hex[(num >> i) & 0xF]);
     }
 }
+
+char uart_getc() {
+    // Wait until the receive FIFO is not empty (bit 4)
+    while(*UART0_FR & (1 << 4));
+    
+    return (char)(*UART0_DR & 0xFF);
+}
+
+int uart_getc_non_blocking(char* c) {
+    // Check if the receive FIFO is empty (bit 4)
+    if(*UART0_FR & (1 << 4)) {
+        return 0; // No data available
+    } else {
+        *c = (char)(*UART0_DR & 0xFF);
+        return 1; // Data read successfully
+    }
+}
+
+void uart_readline(char* buffer, int max_length) {
+    int index = 0;
+    while (index < max_length - 1) {
+        char c = uart_getc();
+        if (c == '\r' || c == '\n') {
+            uart_putc('\r');
+            uart_putc('\n');
+            break;
+        } else if (c == '\b' || c == 127) { // Handle backspace
+            if (index > 0) {
+                index--;
+                uart_puts("\b \b"); // Move cursor back, print space, move back again
+            }
+        } else {
+            buffer[index++] = c;
+            uart_putc(c); // Echo the character
+        }
+    }
+    buffer[index] = '\0'; // Null-terminate the string
+}

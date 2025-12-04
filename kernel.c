@@ -1,5 +1,6 @@
 #include "uart.h"
 #include "interrupts.h"
+#include "shell.h"
 
 void kernel_main(void) {
     uart_init();
@@ -9,17 +10,17 @@ void kernel_main(void) {
     uart_puts("  Pi Zero Bare Metal OS\n");
     uart_puts("================================\n\n");
 
+    // Initialize interrupts and timer
     interrupts_init();
     timer_init();
-
-    // Enable IRQs (will work on real hardware)
-    uart_puts("Enabling IRQs...\n");
     enable_irq();
 
-    uart_puts("\nEntering main loop...\n\n");
+    uart_puts("System initialized.\n");
 
-    while (1) {
-        // // Poll timer (works on QEMU)
-        // timer_poll();
-    }
+    // Start shell
+    shell_init();
+    shell_run();
+    
+    // Never reaches here
+    while (1);
 }
