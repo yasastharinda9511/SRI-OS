@@ -11,10 +11,11 @@ BOOT_DIR = boot
 KERNEL_DIR = kernel
 DRIVERS_DIR = drivers
 SHELL_DIR = shell
+SCHEDULER_DIR = kernel/scheduler
 
 # Flags
 CFLAGS = -mcpu=arm1176jzf-s -O2 -ffreestanding -fno-pic -std=gnu99 -Wall -Wextra
-CFLAGS += -I$(KERNEL_DIR) -I$(DRIVERS_DIR) -I$(SHELL_DIR)
+CFLAGS += -I$(KERNEL_DIR) -I$(DRIVERS_DIR) -I$(SHELL_DIR) -I$(SCHEDULER_DIR)
 ASFLAGS = -mcpu=arm1176jzf-s
 LDFLAGS = -nostdlib -T linker.ld
 
@@ -25,7 +26,9 @@ OBJS = $(BOOT_DIR)/boot.o \
        $(KERNEL_DIR)/interrupts.o \
        $(DRIVERS_DIR)/uart.o \
        $(SHELL_DIR)/shell.o \
-	   $(KERNEL_DIR)/fs.o
+	   $(KERNEL_DIR)/fs.o \
+	   $(SCHEDULER_DIR)/task.o \
+	   $(SCHEDULER_DIR)/context.o
 
 all: kernel.img
 
@@ -45,6 +48,12 @@ $(KERNEL_DIR)/interrupts.o: $(KERNEL_DIR)/interrupts.c $(KERNEL_DIR)/interrupts.
 
 $(KERNEL_DIR)/fs.o: $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/fs.h
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(SCHEDULER_DIR)/task.o: $(SCHEDULER_DIR)/task.c $(SCHEDULER_DIR)/task.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(SCHEDULER_DIR)/context.o: $(SCHEDULER_DIR)/context.S
+	$(AS) $(ASFLAGS) $< -o $@
 
 # Drivers
 $(DRIVERS_DIR)/uart.o: $(DRIVERS_DIR)/uart.c $(DRIVERS_DIR)/uart.h
@@ -76,6 +85,7 @@ clean:
 	rm -f $(KERNEL_DIR)/*.o
 	rm -f $(DRIVERS_DIR)/*.o
 	rm -f $(SHELL_DIR)/*.o
+	rm -f $(SCHEDULER_DIR)/*.o
 	rm -f *.elf *.img *.disasm
 
 .PHONY: all clean disasm qemu qemu-debug

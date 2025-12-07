@@ -39,7 +39,7 @@
 #define SYSTIMER_IRQ_3      (1 << 3)
 
 // Timer interval (1 second = 1,000,000 us at 1MHz)
-#define TIMER_INTERVAL      1000000
+#define TIMER_INTERVAL      100000
 
 // Global tick counter
 extern volatile uint32_t timer_ticks;

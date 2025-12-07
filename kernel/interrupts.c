@@ -1,5 +1,6 @@
 #include "interrupts.h"
 #include "../drivers/uart.h"
+#include "../kernel/scheduler/task.h"
 
 volatile uint32_t timer_ticks = 0;
 static uint32_t next_tick_time = 0;
@@ -61,9 +62,11 @@ void irq_handler_c(void) {
 
         timer_ticks++;
 
-        uart_puts("IRQ Tick: ");
-        uart_puthex(timer_ticks);
-        uart_puts("\n");
+        scheduler_tick();
+
+        // uart_puts("IRQ Tick: ");
+        // uart_puthex(timer_ticks);
+        // uart_puts("\n");
     } else {
         uart_puts("Unknown IRQ\n");
     }
@@ -76,10 +79,7 @@ void timer_poll(void) {
         timer_ticks++;
         next_tick_time += TIMER_INTERVAL;
 
-        uart_puts("Tick (poll): ");
-        uart_puthex(timer_ticks);
-        uart_puts(" CLO=");
-        uart_puthex(current);
-        uart_puts("\n");
+        scheduler_tick();
+        
     }
 }
