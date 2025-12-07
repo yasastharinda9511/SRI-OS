@@ -1,8 +1,7 @@
     .section ".text.boot"
     .global _start
 
-
-    // Define CPU modes
+    // CPU Modes
     .equ MODE_USR, 0x10
     .equ MODE_FIQ, 0x11
     .equ MODE_IRQ, 0x12
@@ -16,25 +15,32 @@
     .equ STACK_FIQ, 0x7000
     .equ STACK_SVC, 0x90000
 
-
 _start:
-    
-    // Enter IRQ mode and set Stack
-    mov r0, #(MODE_IRQ | 0x80| 0x40) // IRQ mode with IRQ and FIQ disabled
+
+    // -----------------------------
+    // Setup IRQ stack
+    // -----------------------------
+    mov r0, #(MODE_IRQ | 0x80 | 0x40)   // IRQ mode, IRQ/FIQ disabled
     msr cpsr_c, r0
     ldr sp, =STACK_IRQ
 
-    // Enter FIQ mode and set Stack
-    mov r0, #(MODE_FIQ | 0x80| 0x40) // FIQ mode with IRQ and FIQ disabled
+    // -----------------------------
+    // Setup FIQ stack
+    // -----------------------------
+    mov r0, #(MODE_FIQ | 0x80 | 0x40)   // FIQ mode, IRQ/FIQ disabled
     msr cpsr_c, r0
     ldr sp, =STACK_FIQ
 
-    // Enter SVC mode and set Stack
-    mov r0, #(MODE_SVC | 0x80| 0x40) // SVC mode with IRQ and FIQ disabled
+    // -----------------------------
+    // Setup SVC stack
+    // -----------------------------
+    mov r0, #(MODE_SVC | 0x80 | 0x40)   // SVC mode, IRQ/FIQ disabled
     msr cpsr_c, r0
     ldr sp, =STACK_SVC
 
-    // Zero out the BSS section
+    // -----------------------------
+    // Zero out BSS
+    // -----------------------------
     ldr r0, =__bss_start
     ldr r1, =__bss_end
 
@@ -46,9 +52,12 @@ zero_loop:
     b zero_loop
 
 zero_done:
+
+    // -----------------------------
+    // Jump to C kernel main
+    // -----------------------------
     bl kernel_main
 
 hang:
-    // If kernel_main returns, halt
-    wfi         // Wait for interrupt (low power)
+    wfi         // Wait for interrupt
     b hang
