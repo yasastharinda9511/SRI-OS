@@ -1,5 +1,5 @@
 #include "fs.h"
-#include "uart.h"
+#include "../drivers/uart/uart.h"
 
 // File storage in RAM
 static File files[MAX_FILES];

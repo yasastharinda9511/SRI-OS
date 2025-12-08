@@ -1,5 +1,5 @@
 #include "interrupts.h"
-#include "../drivers/uart.h"
+#include "../drivers/uart/uart.h"
 #include "../kernel/scheduler/task.h"
 
 volatile uint32_t timer_ticks = 0;

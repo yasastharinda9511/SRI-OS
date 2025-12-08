@@ -48,21 +48,21 @@ $(BUILD_DIR)/vectors.o: $(BOOT_DIR)/vectors.S
 $(BUILD_DIR)/kernel.o: $(KERNEL_DIR)/kernel.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/interrupts.o: $(KERNEL_DIR)/interrupts.c
+$(BUILD_DIR)/interrupts.o: $(KERNEL_DIR)/interrupts/interrupts.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/fs.o: $(KERNEL_DIR)/fs.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Scheduler
-$(BUILD_DIR)/task.o: $(SCHEDULER_DIR)/task.c
+$(BUILD_DIR)/task.o: $(KERNEL_DIR)/scheduler/task.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/context.o: $(SCHEDULER_DIR)/context.S
+$(BUILD_DIR)/context.o: $(KERNEL_DIR)/scheduler/context.S
 	$(AS) $(ASFLAGS) $< -o $@
 
 # Drivers
-$(BUILD_DIR)/uart.o: $(DRIVERS_DIR)/uart.c
+$(BUILD_DIR)/uart.o: $(DRIVERS_DIR)/uart/uart.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Shell

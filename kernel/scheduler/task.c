@@ -1,6 +1,6 @@
 #include "task.h"
-#include "../../drivers/uart.h"
-#include "../interrupts.h"
+#include "../../drivers/uart/uart.h"
+#include "../interrupts/interrupts.h"
 #include <stddef.h>
 
 static Task tasks[MAX_TASKS];

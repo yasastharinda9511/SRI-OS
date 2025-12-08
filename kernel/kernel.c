@@ -1,5 +1,5 @@
-#include "../drivers/uart.h"
-#include "interrupts.h"
+#include "../drivers/uart/uart.h"
+#include "./interrupts/interrupts.h"
 #include "shell.h"
 #include "scheduler/task.h"
 
@@ -47,6 +47,15 @@ void task_counter_2(void) {
     }
 }
 
+void finite_interation(void){
+    for(int i=0;i<5000;i++){
+        uart_puts("Finite Task Iteration: ");
+        uart_putc('0' + i);
+        uart_puts("\n");
+        task_yield();
+    }
+}
+
 void kernel_main(void) {
     uart_init();
 
@@ -69,6 +78,7 @@ void kernel_main(void) {
     // Create sample tasks
     task_create("Counter1", task_counter_1, 1);
     task_create("Counter2", task_counter_2, 1);
+    task_create("FiniteTask", finite_interation, 1);
     scheduler_start();
 
     // Start shell

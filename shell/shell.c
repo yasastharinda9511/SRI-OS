@@ -1,6 +1,6 @@
 #include "shell.h"
-#include "../drivers/uart.h"
-#include "../kernel/interrupts.h"
+#include "../drivers/uart/uart.h"
+#include "../kernel/interrupts/interrupts.h"
 #include "../kernel/fs.h"
 
 // String comparison
