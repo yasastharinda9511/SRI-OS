@@ -7,6 +7,7 @@ OBJCOPY = $(PREFIX)objcopy
 OBJDUMP = $(PREFIX)objdump
 
 # Directories
+BUILD_DIR = build
 BOOT_DIR = boot
 KERNEL_DIR = kernel
 DRIVERS_DIR = drivers
@@ -19,48 +20,53 @@ CFLAGS += -I$(KERNEL_DIR) -I$(DRIVERS_DIR) -I$(SHELL_DIR) -I$(SCHEDULER_DIR)
 ASFLAGS = -mcpu=arm1176jzf-s
 LDFLAGS = -nostdlib -T linker.ld
 
-# Object files
-OBJS = $(BOOT_DIR)/boot.o \
-       $(BOOT_DIR)/vectors.o \
-       $(KERNEL_DIR)/kernel.o \
-       $(KERNEL_DIR)/interrupts.o \
-       $(DRIVERS_DIR)/uart.o \
-       $(SHELL_DIR)/shell.o \
-	   $(KERNEL_DIR)/fs.o \
-	   $(SCHEDULER_DIR)/task.o \
-	   $(SCHEDULER_DIR)/context.o
+# Object files (all in build/)
+OBJS = $(BUILD_DIR)/boot.o \
+       $(BUILD_DIR)/vectors.o \
+       $(BUILD_DIR)/kernel.o \
+       $(BUILD_DIR)/interrupts.o \
+       $(BUILD_DIR)/uart.o \
+       $(BUILD_DIR)/shell.o \
+       $(BUILD_DIR)/fs.o \
+       $(BUILD_DIR)/task.o \
+       $(BUILD_DIR)/context.o
 
-all: kernel.img
+all: $(BUILD_DIR) kernel.img
+
+# Create build directory
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
 
 # Boot
-$(BOOT_DIR)/boot.o: $(BOOT_DIR)/boot.S
+$(BUILD_DIR)/boot.o: $(BOOT_DIR)/boot.S
 	$(AS) $(ASFLAGS) $< -o $@
 
-$(BOOT_DIR)/vectors.o: $(BOOT_DIR)/vectors.S
+$(BUILD_DIR)/vectors.o: $(BOOT_DIR)/vectors.S
 	$(AS) $(ASFLAGS) $< -o $@
 
 # Kernel
-$(KERNEL_DIR)/kernel.o: $(KERNEL_DIR)/kernel.c
+$(BUILD_DIR)/kernel.o: $(KERNEL_DIR)/kernel.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(KERNEL_DIR)/interrupts.o: $(KERNEL_DIR)/interrupts.c $(KERNEL_DIR)/interrupts.h
+$(BUILD_DIR)/interrupts.o: $(KERNEL_DIR)/interrupts.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(KERNEL_DIR)/fs.o: $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/fs.h
+$(BUILD_DIR)/fs.o: $(KERNEL_DIR)/fs.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(SCHEDULER_DIR)/task.o: $(SCHEDULER_DIR)/task.c $(SCHEDULER_DIR)/task.h
+# Scheduler
+$(BUILD_DIR)/task.o: $(SCHEDULER_DIR)/task.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(SCHEDULER_DIR)/context.o: $(SCHEDULER_DIR)/context.S
+$(BUILD_DIR)/context.o: $(SCHEDULER_DIR)/context.S
 	$(AS) $(ASFLAGS) $< -o $@
 
 # Drivers
-$(DRIVERS_DIR)/uart.o: $(DRIVERS_DIR)/uart.c $(DRIVERS_DIR)/uart.h
+$(BUILD_DIR)/uart.o: $(DRIVERS_DIR)/uart.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Shell
-$(SHELL_DIR)/shell.o: $(SHELL_DIR)/shell.c $(SHELL_DIR)/shell.h
+$(BUILD_DIR)/shell.o: $(SHELL_DIR)/shell.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Linking
@@ -81,11 +87,7 @@ qemu-debug: kernel.elf
 	qemu-system-arm -M raspi0 -serial stdio -kernel kernel.elf -S -gdb tcp::1234
 
 clean:
-	rm -f $(BOOT_DIR)/*.o
-	rm -f $(KERNEL_DIR)/*.o
-	rm -f $(DRIVERS_DIR)/*.o
-	rm -f $(SHELL_DIR)/*.o
-	rm -f $(SCHEDULER_DIR)/*.o
+	rm -rf $(BUILD_DIR)
 	rm -f *.elf *.img *.disasm
 
 .PHONY: all clean disasm qemu qemu-debug
