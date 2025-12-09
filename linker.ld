@@ -1,16 +1,20 @@
-ENTRY(_start)
-
 SECTIONS
 {
-    /* Kernel loads at 0x10000 (64KB) - below this is vector table and stacks */
-    . = 0x10000;
+    /* Put vector table at 0x00000000 */
+    . = 0x0000;
+
+    .vectors : {
+        KEEP(*(.text.vectors))
+    }
+
+    /* Raspberry Pi loads kernel at 0x8000 */
+    . = 0x8000;
 
     __start = .;
 
     .text : {
-        KEEP(*(.text.boot))      /* Boot code first */
-        KEEP(*(.text.vectors))   /* Vector table */
-        *(.text*)                /* All other code */
+        KEEP(*(.text.boot))
+        *(.text*)
     }
 
     .rodata : {
@@ -22,11 +26,16 @@ SECTIONS
     }
 
     .bss : {
+        . = ALIGN(16);
         __bss_start = .;
         *(.bss*)
         *(COMMON)
+        . = ALIGN(16);
         __bss_end = .;
     }
 
+    . = ALIGN(16);
     __end = .;
+
+    __heap_start = .;
 }

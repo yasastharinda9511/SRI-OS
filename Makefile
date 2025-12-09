@@ -32,7 +32,9 @@ OBJS = $(BUILD_DIR)/boot.o \
 	   $(BUILD_DIR)/mutex.o \
 	   $(BUILD_DIR)/semaphore.o \
 	   $(BUILD_DIR)/spin_lock.o \
-       $(BUILD_DIR)/context.o
+       $(BUILD_DIR)/context.o \
+	   $(BUILD_DIR)/gpio.o
+
 
 all: $(BUILD_DIR) kernel.img
 
@@ -77,6 +79,11 @@ $(BUILD_DIR)/context.o: $(KERNEL_DIR)/scheduler/context.S
 $(BUILD_DIR)/uart.o: $(DRIVERS_DIR)/uart/uart.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+
+$(BUILD_DIR)/gpio.o: $(DRIVERS_DIR)/gpio/gpio.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+
 # Shell
 $(BUILD_DIR)/shell.o: $(SHELL_DIR)/shell.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -93,10 +100,10 @@ disasm: kernel.elf
 	$(OBJDUMP) -d kernel.elf > kernel.disasm
 
 qemu: kernel.elf
-	qemu-system-arm -M raspi0 -serial stdio -kernel kernel.elf
+	qemu-system-arm -M raspi2b -serial stdio -kernel kernel.elf
 
 qemu-debug: kernel.elf
-	qemu-system-arm -M raspi0 -serial stdio -kernel kernel.elf -S -gdb tcp::1234
+	qemu-system-arm -M raspi2b -serial stdio -kernel kernel.elf -S -gdb tcp::1234
 
 clean:
 	rm -rf $(BUILD_DIR)

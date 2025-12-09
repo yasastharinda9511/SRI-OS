@@ -284,3 +284,10 @@ void task_list(void) {
     }
     uart_puts("\n");
 }
+
+Task* get_current_task(void) {
+    if (current_task_index >= 0) {
+        return &tasks[current_task_index];
+    }
+    return NULL;
+}

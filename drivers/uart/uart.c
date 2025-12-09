@@ -1,9 +1,10 @@
 #include "uart.h"
 
-// UART0 base address for BCM2835 (Pi Zero)
-#define UART0_BASE 0x20201000
+// Pi Zero 2W peripheral base
+#define PERIPHERAL_BASE 0x3F000000
 
-// UART registers
+// UART0
+#define UART0_BASE   (PERIPHERAL_BASE + 0x201000)
 #define UART0_DR     ((volatile unsigned int*)(UART0_BASE + 0x00))
 #define UART0_FR     ((volatile unsigned int*)(UART0_BASE + 0x18))
 #define UART0_IBRD   ((volatile unsigned int*)(UART0_BASE + 0x24))
@@ -12,15 +13,15 @@
 #define UART0_CR     ((volatile unsigned int*)(UART0_BASE + 0x30))
 #define UART0_ICR    ((volatile unsigned int*)(UART0_BASE + 0x44))
 
-// GPIO base address
-#define GPIO_BASE    0x20200000
+// GPIO
+#define GPIO_BASE    (PERIPHERAL_BASE + 0x200000)
 #define GPFSEL1      ((volatile unsigned int*)(GPIO_BASE + 0x04))
 #define GPPUD        ((volatile unsigned int*)(GPIO_BASE + 0x94))
 #define GPPUDCLK0    ((volatile unsigned int*)(GPIO_BASE + 0x98))
 
 // Delay function
 static void delay(int count) {
-    for(volatile int i = 0; i < count; i++);
+    for (volatile int i = 0; i < count; i++);
 }
 
 void uart_init(void) {
@@ -46,8 +47,11 @@ void uart_init(void) {
     *UART0_ICR = 0x7FF;
 
     // Set baud rate to 115200
-    *UART0_IBRD = 1;
-    *UART0_FBRD = 40;
+    // UART clock = 48MHz (Pi Zero 2W with core_freq=250)
+    // Divider = 48000000 / (16 * 115200) = 26.04
+    // IBRD = 26, FBRD = 0.04 * 64 = 3
+    *UART0_IBRD = 26;
+    *UART0_FBRD = 3;
 
     // Enable FIFO & 8-bit data transmission (1 stop bit, no parity)
     *UART0_LCRH = (1 << 4) | (3 << 5);
@@ -57,16 +61,13 @@ void uart_init(void) {
 }
 
 void uart_putc(unsigned char c) {
-    // Wait while transmit FIFO is full (bit 5)
-    // When bit 5 = 0, FIFO has space
-    while(*UART0_FR & (1 << 5));
-    
+    while (*UART0_FR & (1 << 5));
     *UART0_DR = c;
 }
 
 void uart_puts(const char* str) {
-    while(*str) {
-        if(*str == '\n') {
+    while (*str) {
+        if (*str == '\n') {
             uart_putc('\r');
         }
         uart_putc(*str++);
@@ -76,26 +77,22 @@ void uart_puts(const char* str) {
 void uart_puthex(unsigned int num) {
     const char hex[] = "0123456789ABCDEF";
     uart_puts("0x");
-    for(int i = 28; i >= 0; i -= 4) {
+    for (int i = 28; i >= 0; i -= 4) {
         uart_putc(hex[(num >> i) & 0xF]);
     }
 }
 
-char uart_getc() {
-    // Wait until the receive FIFO is not empty (bit 4)
-    while(*UART0_FR & (1 << 4));
-    
+char uart_getc(void) {
+    while (*UART0_FR & (1 << 4));
     return (char)(*UART0_DR & 0xFF);
 }
 
 int uart_getc_non_blocking(char* c) {
-    // Check if the receive FIFO is empty (bit 4)
-    if(*UART0_FR & (1 << 4)) {
-        return 0; // No data available
-    } else {
-        *c = (char)(*UART0_DR & 0xFF);
-        return 1; // Data read successfully
+    if (*UART0_FR & (1 << 4)) {
+        return 0;
     }
+    *c = (char)(*UART0_DR & 0xFF);
+    return 1;
 }
 
 void uart_readline(char* buffer, int max_length) {
@@ -106,15 +103,15 @@ void uart_readline(char* buffer, int max_length) {
             uart_putc('\r');
             uart_putc('\n');
             break;
-        } else if (c == '\b' || c == 127) { // Handle backspace
+        } else if (c == '\b' || c == 127) {
             if (index > 0) {
                 index--;
-                uart_puts("\b \b"); // Move cursor back, print space, move back again
+                uart_puts("\b \b");
             }
         } else {
             buffer[index++] = c;
-            uart_putc(c); // Echo the character
+            uart_putc(c);
         }
     }
-    buffer[index] = '\0'; // Null-terminate the string
+    buffer[index] = '\0';
 }
