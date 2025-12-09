@@ -15,7 +15,7 @@ SHELL_DIR = shell
 SCHEDULER_DIR = kernel/scheduler
 
 # Flags
-CFLAGS = -mcpu=arm1176jzf-s -O2 -ffreestanding -fno-pic -std=gnu99 -Wall -Wextra
+CFLAGS = -mcpu=arm1176jzf-s -O2 -ffreestanding -fno-pic -std=gnu11 -Wall -Wextra
 CFLAGS += -I$(KERNEL_DIR) -I$(DRIVERS_DIR) -I$(SHELL_DIR) -I$(SCHEDULER_DIR)
 ASFLAGS = -mcpu=arm1176jzf-s
 LDFLAGS = -nostdlib -T linker.ld
@@ -29,6 +29,9 @@ OBJS = $(BUILD_DIR)/boot.o \
        $(BUILD_DIR)/shell.o \
        $(BUILD_DIR)/fs.o \
        $(BUILD_DIR)/task.o \
+	   $(BUILD_DIR)/mutex.o \
+	   $(BUILD_DIR)/semaphore.o \
+	   $(BUILD_DIR)/spin_lock.o \
        $(BUILD_DIR)/context.o
 
 all: $(BUILD_DIR) kernel.img
@@ -49,6 +52,15 @@ $(BUILD_DIR)/kernel.o: $(KERNEL_DIR)/kernel.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/interrupts.o: $(KERNEL_DIR)/interrupts/interrupts.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/mutex.o: $(KERNEL_DIR)/sync/mutex.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/semaphore.o: $(KERNEL_DIR)/sync/semaphore.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/spin_lock.o: $(KERNEL_DIR)/sync/spin_lock.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/fs.o: $(KERNEL_DIR)/fs.c
