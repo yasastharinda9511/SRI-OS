@@ -1,48 +1,47 @@
 .section ".text.vectors"
-    .global _vectors
+.balign 32
+.global _vectors
 
 _vectors:
-    ldr pc, _reset_addr       // Reset
-    ldr pc, _undef_addr       // Undefined Instruction
-    ldr pc, _swi_addr         // Software Interrupt
-    ldr pc, _prefetch_addr    // Prefetch Abort
-    ldr pc, _data_addr        // Data Abort
-    ldr pc, _reserved_addr    // Reserved
-    ldr pc, _irq_addr         // IRQ
-    ldr pc, _fiq_addr         // FIQ
+    ldr pc, reset_addr
+    ldr pc, undef_addr
+    ldr pc, swi_addr
+    ldr pc, prefetch_addr
+    ldr pc, data_addr
+    ldr pc, unused_addr
+    ldr pc, irq_addr
+    ldr pc, fiq_addr
 
-_reset_addr:    .word _start
-_undef_addr:    .word undefined_handler
-_swi_addr:      .word swi_handler
-_prefetch_addr: .word prefetch_handler
-_data_addr:     .word data_handler
-_reserved_addr: .word reserved_handler
-_irq_addr:      .word irq_handler_asm    // <-- FIXED: was irq_handler
-_fiq_addr:      .word fiq_handler
+reset_addr:     .word _start
+undef_addr:     .word hang
+swi_addr:       .word hang
+prefetch_addr:  .word hang
+data_addr:      .word hang
+unused_addr:    .word hang
+irq_addr:       .word irq_handler_asm
+fiq_addr:       .word hang
 
-// Default handlers (infinite loop)
-undefined_handler:
-    b undefined_handler
+hang:
+    b hang
 
-swi_handler:
-    b swi_handler
-
-prefetch_handler:
-    b prefetch_handler
-
-data_handler:
-    b data_handler
-
-reserved_handler:
-    b reserved_handler
-
-fiq_handler:
-    b fiq_handler
-
-// IRQ Handler - saves context and calls C handler
-    .global irq_handler_asm
+.global irq_handler_asm
 irq_handler_asm:
-    sub lr, lr, #4              // Adjust return address
-    stmfd sp!, {r0-r12, lr}     // Save registers
-    bl irq_handler_c            // Call C handler
-    ldmfd sp!, {r0-r12, pc}^    // Restore and return (^ restores CPSR)
+    // 1. Set stack FIRST
+    ldr sp, =0x78000
+    
+    // 2. Save return address
+    sub lr, lr, #4
+    
+    // 3. Save ALL registers BEFORE using any
+    stmfd sp!, {r0-r12, lr}
+    
+    // 4. NOW safe to use registers - toggle GPIO for debug
+    ldr r0, =0x3F20001C
+    mov r1, #(1 << 23)
+    str r1, [r0]
+    
+    // 5. Call C handler
+    bl irq_handler_c
+    
+    // 6. Restore and return
+    ldmfd sp!, {r0-r12, pc}^

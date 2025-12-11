@@ -1,63 +1,51 @@
-    .section ".text.boot"
-    .global _start
-
-    // CPU Modes
-    .equ MODE_USR, 0x10
-    .equ MODE_FIQ, 0x11
-    .equ MODE_IRQ, 0x12
-    .equ MODE_SVC, 0x13
-    .equ MODE_ABT, 0x17
-    .equ MODE_UND, 0x1B
-    .equ MODE_SYS, 0x1F
-
-    // Stack Locations
-    .equ STACK_IRQ, 0x8000
-    .equ STACK_FIQ, 0x7000
-    .equ STACK_SVC, 0x90000
+.section ".text.boot"
+.global _start
 
 _start:
+    // Only run on core 0
+    mrc p15, 0, r0, c0, c0, 5
+    and r0, r0, #3
+    cmp r0, #0
+    bne halt
 
-    // -----------------------------
-    // Setup IRQ stack
-    // -----------------------------
-    mov r0, #(MODE_IRQ | 0x80 | 0x40)   // IRQ mode, IRQ/FIQ disabled
-    msr cpsr_c, r0
-    ldr sp, =STACK_IRQ
+    // Check if in HYP mode (0x1A)
+    mrs r0, cpsr
+    and r0, r0, #0x1F
+    cmp r0, #0x1A
+    bne not_hyp
 
-    // -----------------------------
-    // Setup FIQ stack
-    // -----------------------------
-    mov r0, #(MODE_FIQ | 0x80 | 0x40)   // FIQ mode, IRQ/FIQ disabled
-    msr cpsr_c, r0
-    ldr sp, =STACK_FIQ
+    // Switch from HYP to SVC mode
+    mrs r0, cpsr
+    bic r0, r0, #0x1F
+    orr r0, r0, #0x13       // SVC mode
+    orr r0, r0, #0xC0       // Disable IRQ/FIQ
+    msr spsr_hyp, r0
+    ldr r0, =in_svc
+    msr elr_hyp, r0
+    eret
 
-    // -----------------------------
-    // Setup SVC stack
-    // -----------------------------
-    mov r0, #(MODE_SVC | 0x80 | 0x40)   // SVC mode, IRQ/FIQ disabled
-    msr cpsr_c, r0
-    ldr sp, =STACK_SVC
+not_hyp:
+in_svc:
+    // Now in SVC mode - set stack
+    ldr sp, =0x80000
 
-    // -----------------------------
-    // Zero out BSS
-    // -----------------------------
+    // Set VBAR
+    ldr r0, =_vectors
+    mcr p15, 0, r0, c12, c0, 0
+
+    // Clear BSS
     ldr r0, =__bss_start
     ldr r1, =__bss_end
-
-zero_loop:
+zero_bss:
     cmp r0, r1
-    bhs zero_done
+    bhs bss_done
     mov r2, #0
     str r2, [r0], #4
-    b zero_loop
+    b zero_bss
 
-zero_done:
-
-    // -----------------------------
-    // Jump to C kernel main
-    // -----------------------------
+bss_done:
     bl kernel_main
 
-hang:
-    wfi         // Wait for interrupt
-    b hang
+halt:
+    wfe
+    b halt

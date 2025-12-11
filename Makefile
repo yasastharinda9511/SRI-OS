@@ -14,31 +14,29 @@ DRIVERS_DIR = drivers
 SHELL_DIR = shell
 SCHEDULER_DIR = kernel/scheduler
 
-# Flags
-CFLAGS = -mcpu=arm1176jzf-s -O2 -ffreestanding -fno-pic -std=gnu11 -Wall -Wextra
+# Flags - Pi Zero 2W uses Cortex-A53
+CFLAGS = -mcpu=cortex-a53 -O2 -ffreestanding -fno-pic -std=gnu11 -Wall -Wextra
 CFLAGS += -I$(KERNEL_DIR) -I$(DRIVERS_DIR) -I$(SHELL_DIR) -I$(SCHEDULER_DIR)
-ASFLAGS = -mcpu=arm1176jzf-s
+ASFLAGS = -mcpu=cortex-a53
 LDFLAGS = -nostdlib -T linker.ld
 
-# Object files (all in build/)
+# Object files
 OBJS = $(BUILD_DIR)/boot.o \
-       $(BUILD_DIR)/vectors.o \
+	   $(BUILD_DIR)/vectors.o \
        $(BUILD_DIR)/kernel.o \
        $(BUILD_DIR)/interrupts.o \
        $(BUILD_DIR)/uart.o \
        $(BUILD_DIR)/shell.o \
        $(BUILD_DIR)/fs.o \
        $(BUILD_DIR)/task.o \
-	   $(BUILD_DIR)/mutex.o \
-	   $(BUILD_DIR)/semaphore.o \
-	   $(BUILD_DIR)/spin_lock.o \
+       $(BUILD_DIR)/mutex.o \
+       $(BUILD_DIR)/semaphore.o \
+       $(BUILD_DIR)/spin_lock.o \
        $(BUILD_DIR)/context.o \
-	   $(BUILD_DIR)/gpio.o
-
+       $(BUILD_DIR)/gpio.o
 
 all: $(BUILD_DIR) kernel.img
 
-# Create build directory
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
@@ -79,10 +77,8 @@ $(BUILD_DIR)/context.o: $(KERNEL_DIR)/scheduler/context.S
 $(BUILD_DIR)/uart.o: $(DRIVERS_DIR)/uart/uart.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-
 $(BUILD_DIR)/gpio.o: $(DRIVERS_DIR)/gpio/gpio.c
 	$(CC) $(CFLAGS) -c $< -o $@
-
 
 # Shell
 $(BUILD_DIR)/shell.o: $(SHELL_DIR)/shell.c
