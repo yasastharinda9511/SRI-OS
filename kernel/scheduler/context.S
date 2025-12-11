@@ -1,40 +1,73 @@
-/*-----------------------------------------------------------------------*/
-/* Context Switch Assembly for ARM                                       */
-/*-----------------------------------------------------------------------*/
-
-    .global context_switch
-    .type context_switch, %function
+.global context_switch
+.type context_switch, %function
 
 /*
  * void context_switch(uint32_t** old_sp, uint32_t* new_sp)
  *
- * r0 = pointer to old task's sp storage (NULL if no old task)
- * r1 = new task's sp value
- *
- * Stack frame (15 registers):
- *   r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, lr, pc
+ * Stack layout (matches IRQ handler):
+ *   [sp+0]  = SPSR
+ *   [sp+4]  = r0
+ *   [sp+8]  = r1
+ *   ...
+ *   [sp+56] = lr
+ *   [sp+60] = pc
  */
 
 context_switch:
-    /* Check if we need to save old context */
     cmp r0, #0
-    beq load_new_context
+    beq 1f
 
-    /* Save old task's context */
-    push {lr}                   /* Save return address (will be PC) */
-    push {lr}                   /* Save LR */
-    push {r0-r12}               /* Save r0-r12 */
-
-    /* Save stack pointer to old task's TCB */
+    /* Save context to stack */
+    sub sp, sp, #64           /* Allocate 16 words */
+    
+    str lr, [sp, #60]         /* pc = return address */
+    str lr, [sp, #56]         /* lr */
+    str r12, [sp, #52]
+    str r11, [sp, #48]
+    str r10, [sp, #44]
+    str r9, [sp, #40]
+    str r8, [sp, #36]
+    str r7, [sp, #32]
+    str r6, [sp, #28]
+    str r5, [sp, #24]
+    str r4, [sp, #20]
+    str r3, [sp, #16]
+    str r2, [sp, #12]
+    str r1, [sp, #8]
+    str r0, [sp, #4]
+    
+    mrs r2, cpsr
+    str r2, [sp, #0]          /* SPSR = current CPSR */
+    
+    /* Save SP to old_sp pointer */
     str sp, [r0]
 
-load_new_context:
-    /* Load new task's stack pointer */
+1:
+    /* Load new SP */
     mov sp, r1
+    
+    /* Restore SPSR */
+    ldr r0, [sp, #0]
+    msr spsr_cxsf, r0
+    
+    /* Restore registers */
+    ldr r0, [sp, #4]
+    ldr r1, [sp, #8]
+    ldr r2, [sp, #12]
+    ldr r3, [sp, #16]
+    ldr r4, [sp, #20]
+    ldr r5, [sp, #24]
+    ldr r6, [sp, #28]
+    ldr r7, [sp, #32]
+    ldr r8, [sp, #36]
+    ldr r9, [sp, #40]
+    ldr r10, [sp, #44]
+    ldr r11, [sp, #48]
+    ldr r12, [sp, #52]
+    ldr lr, [sp, #56]
+    
+    /* Load PC and restore CPSR from SPSR */
+    add sp, sp, #60
+    ldmfd sp!, {pc}^
 
-    /* Restore new task's context */
-    pop {r0-r12}                /* Restore r0-r12 */
-    pop {lr}                    /* Restore LR */
-    pop {pc}                    /* Jump to saved PC */
-
-    .size context_switch, . - context_switch
+.size context_switch, . - context_switch

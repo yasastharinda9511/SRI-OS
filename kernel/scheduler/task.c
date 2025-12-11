@@ -7,6 +7,9 @@ static Task tasks[MAX_TASKS];
 static int current_task_index = -1;
 static int scheduler_running = 0;
 
+// Pointer to current task's SP storage (for IRQ handler)
+uint32_t** current_sp_ptr = NULL;
+
 static void str_copy(char* dst, const char* src, int max) {
     int i = 0;
     while (src[i] && i < max - 1) {
@@ -26,6 +29,7 @@ void scheduler_init(void) {
     }
     current_task_index = -1;
     scheduler_running = 0;
+    current_sp_ptr = NULL;
     uart_puts("Scheduler initialized.\n");
 }
 
@@ -36,7 +40,6 @@ static void task_wrapper(TaskFunction func) {
 }
 
 int task_create(const char* name, TaskFunction func, uint32_t priority) {
-    
     int slot = -1;
     for (int i = 0; i < MAX_TASKS; i++) {
         if (tasks[i].state == TASK_UNUSED) {
@@ -55,38 +58,17 @@ int task_create(const char* name, TaskFunction func, uint32_t priority) {
     str_copy(task->name, name, TASK_NAME_LEN);
     
     /*
-     * Stack layout - MUST MATCH context.S pop order!
-     * 
-     * context.S does:
-     *   pop {r0-r12}   ← 13 registers
-     *   pop {lr}       ← 1 register
-     *   pop {pc}       ← 1 register (jumps here)
-     *                  ─────────────
-     *                  Total: 15 values
+     * Stack layout for preemptive scheduler:
+     * Must match IRQ handler's restore order:
+     *   ldmfd sp!, {r0}          <- SPSR
+     *   ldmfd sp!, {r0-r12, lr, pc}^
      *
-     * So we create stack (top to bottom, sp points to r0):
-     *   [high address]
-     *   pc  = task_wrapper  ← popped last, execution starts here
-     *   lr  = 0
-     *   r12 = 0
-     *   r11 = 0
-     *   r10 = 0
-     *   r9  = 0
-     *   r8  = 0
-     *   r7  = 0
-     *   r6  = 0
-     *   r5  = 0
-     *   r4  = 0
-     *   r3  = 0
-     *   r2  = 0
-     *   r1  = 0
-     *   r0  = func      ← argument to task_wrapper
-     *   [low address]   ← sp points here
+     * So stack (from low to high address):
+     *   SPSR, r0, r1, r2, r3, r4-r12, lr, pc
      */
-
     uint32_t* sp = &task->stack[TASK_STACK_SIZE / 4];  // Start at top
     
-    *(--sp) = (uint32_t)task_wrapper;  // pc - where execution starts
+    *(--sp) = (uint32_t)task_wrapper;  // pc
     *(--sp) = 0;                        // lr
     *(--sp) = 0;                        // r12
     *(--sp) = 0;                        // r11
@@ -101,6 +83,7 @@ int task_create(const char* name, TaskFunction func, uint32_t priority) {
     *(--sp) = 0;                        // r2
     *(--sp) = 0;                        // r1
     *(--sp) = (uint32_t)func;           // r0 - argument to task_wrapper
+    *(--sp) = 0x13;                     // SPSR - SVC mode, IRQ enabled
     
     task->stack_pointer = sp;
     task->state = TASK_READY;
@@ -116,9 +99,19 @@ int task_create(const char* name, TaskFunction func, uint32_t priority) {
 }
 
 static int find_next_task(void) {
+    if (current_task_index < 0) {
+        // No current task, find first ready
+        for (int i = 0; i < MAX_TASKS; i++) {
+            if (tasks[i].state == TASK_READY) {
+                return i;
+            }
+        }
+        return -1;
+    }
+    
     int start = (current_task_index + 1) % MAX_TASKS;
-    int idx = start;    
-
+    int idx = start;
+    
     do {
         // Check for sleeping tasks that should wake up
         if (tasks[idx].state == TASK_SLEEPING) {
@@ -136,38 +129,69 @@ static int find_next_task(void) {
     return -1;
 }
 
+// Called from IRQ handler - preemptive scheduling
+uint32_t* preempt_schedule(uint32_t* current_sp) {
+    if (!scheduler_running) {
+        return 0;  // Return 0 means no switch
+    }
+    
+    // Save current task's SP
+    if (current_task_index >= 0) {
+        tasks[current_task_index].stack_pointer = current_sp;
+    }
+    
+    // Find next task
+    int next = find_next_task();
+    
+    if (next < 0) {
+        return 0;  // No task to switch to
+    }
+    
+    if (next == current_task_index) {
+        return 0;  // Same task, no switch needed
+    }
+    
+    // Perform switch
+    int prev = current_task_index;
+    current_task_index = next;
+    
+    if (prev >= 0 && tasks[prev].state == TASK_RUNNING) {
+        tasks[prev].state = TASK_READY;
+    }
+    
+    tasks[next].state = TASK_RUNNING;
+    current_sp_ptr = &tasks[next].stack_pointer;
+    
+    return tasks[next].stack_pointer;  // Return new SP
+}
+
+// Called from user code - cooperative scheduling
 void schedule(void) {
     if (!scheduler_running) {
         return;
     }
     
     int next = find_next_task();
-
-    if (next < 0) {
+    
+    if (next < 0 || next == current_task_index) {
         return;
     }
-
-    if (next == current_task_index) {
-        return;
-    }
-
+    
     int prev = current_task_index;
     current_task_index = next;
-
+    
     if (prev >= 0 && tasks[prev].state == TASK_RUNNING) {
         tasks[prev].state = TASK_READY;
     }
-
+    
     tasks[next].state = TASK_RUNNING;
+    current_sp_ptr = &tasks[next].stack_pointer;
     
     if (prev >= 0) {
         context_switch(&tasks[prev].stack_pointer, tasks[next].stack_pointer);
     } else {
         context_switch(0, tasks[next].stack_pointer);
     }
-    
-    // NOTE: When we return here, it means another task switched back to us.
-    // This is NORMAL, not an error!
 }
 
 void scheduler_start(void) {
@@ -182,21 +206,21 @@ void scheduler_start(void) {
     
     scheduler_running = 1;
     tasks[current_task_index].state = TASK_RUNNING;
+    current_sp_ptr = &tasks[current_task_index].stack_pointer;
     
     uart_puts("Scheduler: Running task '");
     uart_puts(tasks[current_task_index].name);
     uart_puts("'\n\n");
     
-    // Jump to first task - this "returns" to task_wrapper
+    // Jump to first task
     context_switch(0, tasks[current_task_index].stack_pointer);
     
-    // Should never reach here because first task never returns to us
     uart_puts("Scheduler: ERROR - scheduler_start returned!\n");
     while(1);
 }
 
 void scheduler_tick(void) {
-    schedule();
+    // For preemptive: do nothing here, scheduling happens in IRQ handler
 }
 
 void task_exit(void) {
@@ -212,7 +236,6 @@ void task_exit(void) {
     
     schedule();
     
-    // If schedule returns, no more tasks
     uart_puts("Scheduler: All tasks terminated.\n");
     while (1) {
         __asm__ __volatile__("wfi");
@@ -223,10 +246,8 @@ void task_yield(void) {
     schedule();
 }
 
-void task_sleep(uint32_t ms) {
+void task_sleep(uint32_t ticks) {
     if (current_task_index < 0) return;
-    
-    uint32_t ticks = (ms + 999) / 1000;
     
     tasks[current_task_index].sleep_until = timer_ticks + ticks;
     tasks[current_task_index].state = TASK_SLEEPING;
