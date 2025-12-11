@@ -1,5 +1,6 @@
 #include "interrupts.h"
 #include "../drivers/uart/uart.h"
+#include "scheduler/task.h"
 
 volatile uint32_t timer_ticks = 0;
 
@@ -46,6 +47,8 @@ void irq_handler_c(void) {
         *((volatile uint32_t*)0x3F20001C) = (1 << 23);
     }
     toggle = !toggle;
+
+    // scheduler_tick();
     
     uart_putc('T');
 }

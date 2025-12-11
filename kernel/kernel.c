@@ -1,6 +1,25 @@
 #include "../drivers/gpio/gpio.h"
 #include "../drivers/uart/uart.h"
 #include "./interrupts/interrupts.h"
+#include "./scheduler/task.h"
+
+void counter_one_sec(void) {
+    while (1)
+    {
+        uart_puts("Task: One second passed!\n");
+        task_yield();
+        for(volatile int i = 0; i < 2000000; i++);
+    }
+}
+
+void counter_two_sec(void) {
+    while (1)
+    {
+        uart_puts("Task: two second passed!\n");
+        task_yield();
+        for(volatile int i = 0; i < 2000000; i++);
+    }
+}
 
 extern char _vectors;
 
@@ -8,22 +27,21 @@ void kernel_main(void) {
     uart_init();
     
     uart_puts("\n\n=== IRQ TEST ===\n\n");
-    
-    // Set VBAR
-    uint32_t vec_addr = (uint32_t)&_vectors;
-    __asm__ __volatile__("mcr p15, 0, %0, c12, c0, 0" :: "r"(vec_addr));
-    
+
+    scheduler_init();
+
+    task_create("Counter 1s", counter_one_sec, 1);
+    task_create("Counter 2s", counter_two_sec, 1);
     gpio_set_output(23);
     
     interrupts_init();
     timer_init();
     
     uart_puts("Enabling IRQ...\n");
-    __asm__ __volatile__("cpsie i" ::: "memory");
+    enable_irq();
     uart_puts("IRQ enabled!\n\n");
+
+    scheduler_start();
     
-    while (1) {
-        uart_putc('.');
-        for (volatile int i = 0; i < 2000000; i++);
-    }
+    while (1) {}
 }
