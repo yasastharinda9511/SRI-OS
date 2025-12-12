@@ -58,6 +58,10 @@ void uart_init(void) {
 
     // Enable UART0, receive & transfer
     *UART0_CR = (1 << 0) | (1 << 8) | (1 << 9);
+    for (int i = 0; i < 1000000; i++);
+    uart_puts("UART0_CR = ");
+    uart_puthex(*UART0_CR);
+    uart_puts("\n");
 }
 
 void uart_putc(unsigned char c) {

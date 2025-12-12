@@ -12,6 +12,7 @@ BOOT_DIR = boot
 KERNEL_DIR = kernel
 DRIVERS_DIR = drivers
 SHELL_DIR = shell
+UTILS_DIR = utils
 SCHEDULER_DIR = kernel/scheduler
 
 # Flags - Pi Zero 2W uses Cortex-A53
@@ -33,7 +34,10 @@ OBJS = $(BUILD_DIR)/boot.o \
        $(BUILD_DIR)/semaphore.o \
        $(BUILD_DIR)/spin_lock.o \
        $(BUILD_DIR)/context.o \
-       $(BUILD_DIR)/gpio.o
+       $(BUILD_DIR)/gpio.o \
+	   $(BUILD_DIR)/commands.o \
+	   $(BUILD_DIR)/cmd_system.o \
+	   $(BUILD_DIR)/string_utils.o
 
 all: $(BUILD_DIR) kernel.img
 
@@ -69,19 +73,25 @@ $(BUILD_DIR)/fs.o: $(KERNEL_DIR)/fs.c
 # Scheduler
 $(BUILD_DIR)/task.o: $(KERNEL_DIR)/scheduler/task.c
 	$(CC) $(CFLAGS) -c $< -o $@
-
 $(BUILD_DIR)/context.o: $(KERNEL_DIR)/scheduler/context.S
 	$(AS) $(ASFLAGS) $< -o $@
 
 # Drivers
 $(BUILD_DIR)/uart.o: $(DRIVERS_DIR)/uart/uart.c
 	$(CC) $(CFLAGS) -c $< -o $@
-
 $(BUILD_DIR)/gpio.o: $(DRIVERS_DIR)/gpio/gpio.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Shell
 $(BUILD_DIR)/shell.o: $(SHELL_DIR)/shell.c
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/commands.o: $(SHELL_DIR)/commands/commands.c
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/cmd_system.o: $(SHELL_DIR)/commands/cmd_system.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Utils
+$(BUILD_DIR)/string_utils.o: $(UTILS_DIR)/string_utils.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Linking

@@ -31,7 +31,7 @@
 #define SYSTIMER_C1         ((volatile uint32_t*)(SYSTIMER_BASE + 0x10))
 #define SYSTIMER_M1         (1 << 1)
 
-#define TIMER_INTERVAL      1000000
+#define TIMER_INTERVAL      10000
 
 extern volatile uint32_t timer_ticks;
 

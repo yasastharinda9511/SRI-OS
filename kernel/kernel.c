@@ -2,30 +2,28 @@
 #include "../drivers/uart/uart.h"
 #include "./interrupts/interrupts.h"
 #include "./scheduler/task.h"
+#include "../shell/shell.h"
 
-// Task 1 - no yield, just loops
-void task_one(void) {
-    int count = 0;
+// Background task - blinks LED
+void task_blink(void) {
+    gpio_set_output(23);
+    
     while (1) {
-        uart_puts("ONE: ");
-        uart_puthex(count++);
-        uart_puts("\n");
+        gpio_high(23);
+        for(volatile int i = 0; i < 2000000; i++);
         
-        // No yield! Timer IRQ will preempt this
-        for(volatile int i = 0; i < 3000000; i++);
+        gpio_low(23);
+        for(volatile int i = 0; i < 2000000; i++);
     }
 }
 
-// Task 2 - no yield, just loops
-void task_two(void) {
+// Background task - counter (optional, for demo)
+void task_counter(void) {
     int count = 0;
     while (1) {
-        uart_puts("TWO: ");
-        uart_puthex(count++);
-        uart_puts("\n");
-        
-        // No yield! Timer IRQ will preempt this
-        for(volatile int i = 0; i < 3000000; i++);
+        // Runs silently in background
+        count++;
+        for(volatile int i = 0; i < 5000000; i++);
     }
 }
 
@@ -34,7 +32,7 @@ void kernel_main(void) {
     
     uart_puts("\n\n");
     uart_puts("================================\n");
-    uart_puts("  SriOS - Preemptive Scheduler\n");
+    uart_puts("  SriOS - Pi Zero 2W\n");
     uart_puts("================================\n\n");
     
     // Set VBAR
@@ -42,12 +40,16 @@ void kernel_main(void) {
     uint32_t vec_addr = (uint32_t)&_vectors;
     __asm__ __volatile__("mcr p15, 0, %0, c12, c0, 0" :: "r"(vec_addr));
     
+    // Initialize scheduler
     scheduler_init();
-    task_create("Task ONE", task_one, 1);
-    task_create("Task TWO", task_two, 1);
     
+    // Create tasks
+    task_create("Shell", shell_task, 1);      // Interactive shell
+    task_create("Blink", task_blink, 1);      // LED blinker
+    // task_create("Counter", task_counter, 1);  // Optional
+    
+    // Initialize interrupts
     gpio_set_output(23);
-    
     interrupts_init();
     timer_init();
     
@@ -55,11 +57,9 @@ void kernel_main(void) {
     enable_irq();
     uart_puts("IRQ enabled!\n\n");
     
-    uart_puts("Starting preemptive scheduler...\n");
-    uart_puts("(Tasks will switch automatically by timer)\n\n");
-    
+    // Start scheduler - shell will appear
     scheduler_start();
     
-    // Should never reach here
+    // Never reaches here
     while (1) {}
 }
