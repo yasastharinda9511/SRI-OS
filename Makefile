@@ -37,7 +37,8 @@ OBJS = $(BUILD_DIR)/boot.o \
        $(BUILD_DIR)/gpio.o \
 	   $(BUILD_DIR)/commands.o \
 	   $(BUILD_DIR)/cmd_system.o \
-	   $(BUILD_DIR)/string_utils.o
+	   $(BUILD_DIR)/string_utils.o \
+	   $(BUILD_DIR)/sd.o
 
 all: $(BUILD_DIR) kernel.img
 
@@ -81,6 +82,9 @@ $(BUILD_DIR)/uart.o: $(DRIVERS_DIR)/uart/uart.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD_DIR)/gpio.o: $(DRIVERS_DIR)/gpio/gpio.c
 	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/sd.o: $(DRIVERS_DIR)/sd/sd.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
 
 # Shell
 $(BUILD_DIR)/shell.o: $(SHELL_DIR)/shell.c
