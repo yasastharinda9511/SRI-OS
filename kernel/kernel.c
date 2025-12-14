@@ -28,51 +28,6 @@ void task_counter(void) {
     }
 }
 
-
-void read_sd_card(){
-    uart_puts("\n=== Reading MBR (sector 0) ===\n");
-    
-    uint8_t buffer[512];
-    
-    // Clear buffer first
-    for (int i = 0; i < 512; i++) {
-        buffer[i] = 0;
-    }
-    
-    if (sd_read(0, 1, buffer) == SD_OK) {
-        uart_puts("Read OK!\n\n");
-        
-        // Print first 32 bytes as HEX (byte by byte)
-        uart_puts("First 32 bytes:\n");
-        for (int i = 0; i < 32; i++) {
-            // Print byte as 2 hex digits
-            const char hex[] = "0123456789ABCDEF";
-            uart_putc(hex[(buffer[i] >> 4) & 0x0F]);
-            uart_putc(hex[buffer[i] & 0x0F]);
-            uart_putc(' ');
-            if ((i + 1) % 16 == 0) uart_puts("\n");
-        }
-        
-        // Check MBR signature
-        uart_puts("\nMBR signature: ");
-        const char hex[] = "0123456789ABCDEF";
-        uart_putc(hex[(buffer[510] >> 4) & 0x0F]);
-        uart_putc(hex[buffer[510] & 0x0F]);
-        uart_putc(' ');
-        uart_putc(hex[(buffer[511] >> 4) & 0x0F]);
-        uart_putc(hex[buffer[511] & 0x0F]);
-        
-        if (buffer[510] == 0x55 && buffer[511] == 0xAA) {
-            uart_puts(" - VALID!\n");
-        } else {
-            uart_puts(" - INVALID\n");
-        }
-        
-    } else {
-        uart_puts("Read FAILED!\n");
-    }
-}
-
 void kernel_main(void) {
     uart_init();
     
@@ -83,8 +38,8 @@ void kernel_main(void) {
 
     sd_init();
 
-    read_sd_card();
-    
+    test_sd_read();
+    test_sd_write();
     // Set VBAR
     extern char _vectors;
     uint32_t vec_addr = (uint32_t)&_vectors;

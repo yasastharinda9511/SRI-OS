@@ -95,6 +95,9 @@
 #define CMD_ALL_SEND_CID    2
 #define CMD_SEND_REL_ADDR   3
 #define CMD_SELECT_CARD     7
+#define ACMD_SET_BUS_WIDTH  6
+
+#define TEST_SECTOR      4096
 
 static uint32_t sd_rca = 0;
 static int sd_high_capacity = 0;
@@ -281,6 +284,19 @@ int sd_init(void) {
     if (sd_send_cmd(CMD_SELECT_CARD, sd_rca, SDCMD_BUSY_CMD) != SD_OK) {
         return SD_ERROR;
     }
+
+    uart_puts("SD: ACMD6 (Set 4-bit bus)...\n");
+    if (sd_send_acmd(ACMD_SET_BUS_WIDTH, 2, 0) != SD_OK) {
+        uart_puts("SD: ACMD6 failed\n");
+        return SD_ERROR;
+    }
+
+    // 2. Tell the Controller to use 4-bit bus (SDHCFG register)
+    // SDHCFG bit 0 controls the bus width (1 = 4-bit, 0 = 1-bit)
+    uint32_t hcfg = *SDHCFG;
+    // Ensure other bits are preserved or cleared as necessary. We are setting bit 0.
+    hcfg |= 1; 
+    *SDHCFG = hcfg;
     
     // Set block length for SDSC
     if (!sd_high_capacity) {
@@ -351,53 +367,161 @@ int sd_read(uint32_t sector, uint32_t count, uint8_t* buffer) {
     
     return SD_OK;
 }
-int sd_write(uint32_t sector, uint32_t count, const uint8_t* buffer) {
-    const uint32_t* buf = (const uint32_t*)buffer;
+int sd_write(uint32_t sector, uint32_t count, const uint8_t *buffer)
+{
     uint32_t addr = sd_high_capacity ? sector : (sector * 512);
     int timeout;
-    
+
     for (uint32_t block = 0; block < count; block++) {
+
         *SDHSTS = SDHSTS_CLEAR_MASK;
         *SDHBCT = 512;
         *SDHBLC = 1;
-        
+
         *SDARG = addr + (sd_high_capacity ? block : block * 512);
         *SDCMD = CMD_WRITE_SINGLE | SDCMD_NEW_FLAG | SDCMD_WRITE_CMD;
-        
+
         timeout = 100000;
         while ((*SDCMD & SDCMD_NEW_FLAG) && timeout--) {
             sd_delay_us(1);
         }
-        
+
         if (timeout <= 0 || (*SDCMD & SDCMD_FAIL_FLAG)) {
+            uart_puts("SD: WRITE CMD failed\n");
             return SD_ERROR;
         }
-        
-        // Write 128 words
-        for (int i = 0; i < 128; i++) {
+
+        const uint8_t *buf = buffer + block * 512;
+
+        /* Write 512 data bytes */
+        for (int i = 0; i < 512; i++) {
             timeout = 100000;
             while (timeout--) {
                 uint32_t edm = *SDEDM;
-                uint32_t fifo_fill = (edm >> SDEDM_FIFO_FILL_SHIFT) & SDEDM_FIFO_FILL_MASK;
-                if (fifo_fill < SDDATA_FIFO_WORDS) break;
+                uint32_t fifo_fill =
+                    (edm >> SDEDM_FIFO_FILL_SHIFT) & SDEDM_FIFO_FILL_MASK;
+
+                if (fifo_fill < SDDATA_FIFO_WORDS)
+                    break;
+
                 sd_delay_us(1);
             }
-            
-            if (timeout <= 0) return SD_TIMEOUT;
-            
-            *SDDATA = buf[block * 128 + i];
+
+            if (timeout <= 0) {
+                uart_puts("SD: FIFO timeout\n");
+                return SD_TIMEOUT;
+            }
+
+            *(volatile uint8_t*)SDDATA = buf[i];
         }
-        
-        // Wait for complete
+
+        /* Wait for block complete */
         timeout = 1000000;
         while (!(*SDHSTS & SDHSTS_BLOCK_IRPT) && timeout--) {
+            if (*SDHSTS & SDHSTS_ERROR_MASK) {
+                uart_puts("SD: WRITE block error\n");
+                *SDHSTS = SDHSTS_ERROR_MASK;
+                return SD_ERROR;
+            }
             sd_delay_us(1);
         }
     }
-    
+
     return SD_OK;
 }
 
 uint32_t sd_get_sector_count(void) {
     return 0;
+}
+
+
+void test_sd_write(void) {
+    uart_puts("\n=== SD WRITE TEST ===\n");
+
+    uint8_t write_buf[512];
+    uint8_t read_buf[512];
+    uint8_t backup_buf[512];
+
+    // Step 1: read original sector
+    if (sd_read(TEST_SECTOR, 1, backup_buf) != SD_OK) {
+        uart_puts("Backup read failed!\n");
+        return;
+    }
+
+    // Step 2: fill test pattern
+    for (int i = 0; i < 512; i++) {
+        write_buf[i] = (uint8_t)(i & 0xFF);  // 00 01 02 ... FF
+    }
+
+    // Step 3: write test pattern
+    if (sd_write(TEST_SECTOR, 1, write_buf) != SD_OK) {
+        uart_puts("Write failed!\n");
+        return;
+    }
+
+    // Step 4: read back
+    if (sd_read(TEST_SECTOR, 1, read_buf) != SD_OK) {
+        uart_puts("Read-back failed!\n");
+        return;
+    }
+
+    // Step 5: verify
+    for (int i = 0; i < 512; i++) {
+        if (read_buf[i] != write_buf[i]) {
+            uart_puts("VERIFY FAILED at byte ");
+            uart_puthex(i);
+            uart_puts("\n");
+            goto restore;
+        }
+    }
+
+    uart_puts("WRITE TEST PASSED !!\n");
+
+restore:
+    // Step 6: restore original data
+    sd_write(TEST_SECTOR, 1, backup_buf);
+}
+
+void test_sd_read(){
+    uart_puts("\n=== Reading MBR (sector 0) ===\n");
+    
+    uint8_t buffer[512];
+    
+    // Clear buffer first
+    for (int i = 0; i < 512; i++) {
+        buffer[i] = 0;
+    }
+    
+    if (sd_read(0, 1, buffer) == SD_OK) {
+        uart_puts("Read OK!\n\n");
+        
+        // Print first 32 bytes as HEX (byte by byte)
+        uart_puts("First 32 bytes:\n");
+        for (int i = 0; i < 32; i++) {
+            // Print byte as 2 hex digits
+            const char hex[] = "0123456789ABCDEF";
+            uart_putc(hex[(buffer[i] >> 4) & 0x0F]);
+            uart_putc(hex[buffer[i] & 0x0F]);
+            uart_putc(' ');
+            if ((i + 1) % 16 == 0) uart_puts("\n");
+        }
+        
+        // Check MBR signature
+        uart_puts("\nMBR signature: ");
+        const char hex[] = "0123456789ABCDEF";
+        uart_putc(hex[(buffer[510] >> 4) & 0x0F]);
+        uart_putc(hex[buffer[510] & 0x0F]);
+        uart_putc(' ');
+        uart_putc(hex[(buffer[511] >> 4) & 0x0F]);
+        uart_putc(hex[buffer[511] & 0x0F]);
+        
+        if (buffer[510] == 0x55 && buffer[511] == 0xAA) {
+            uart_puts(" - VALID!\n");
+        } else {
+            uart_puts(" - INVALID\n");
+        }
+        
+    } else {
+        uart_puts("Read FAILED!\n");
+    }
 }

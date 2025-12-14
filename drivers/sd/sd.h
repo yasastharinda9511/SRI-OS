@@ -39,4 +39,7 @@ int sd_write(uint32_t sector, uint32_t count, const uint8_t* buffer);
 // Get SD card size in sectors
 uint32_t sd_get_sector_count(void);
 
+void test_sd_write(void);
+void test_sd_read(void);
+
 #endif
