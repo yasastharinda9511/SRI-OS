@@ -304,7 +304,7 @@ int sd_init(void) {
     }
     
     // Increase clock speed
-    *SDCDIV = 6;  // ~25MHz
+    *SDCDIV = 4;  // ~25MHz
     
     // Set block size
     *SDHBCT = 512;
