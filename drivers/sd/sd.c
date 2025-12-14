@@ -96,11 +96,13 @@
 #define CMD_SEND_REL_ADDR   3
 #define CMD_SELECT_CARD     7
 #define ACMD_SET_BUS_WIDTH  6
+#define CMD_SEND_CSD 9
 
 #define TEST_SECTOR      4096
 
 static uint32_t sd_rca = 0;
 static int sd_high_capacity = 0;
+static uint32_t sd_total_sectors = 0;
 
 static void sd_delay(uint32_t count) {
     for (volatile uint32_t i = 0; i < count; i++) {
@@ -217,10 +219,10 @@ static int sd_send_acmd(uint32_t cmd, uint32_t arg, uint32_t flags) {
     }
     return sd_send_cmd(cmd, arg, flags);
 }
-
 int sd_init(void) {
     uint32_t temp;
     int retries;
+    int32_t csd[4]; // Array to hold the CSD response
     
     uart_puts("\n=== SD Card Init ===\n");
     
@@ -266,20 +268,73 @@ int sd_init(void) {
     sd_high_capacity = (ocr & 0x40000000) ? 1 : 0;
     uart_puts(sd_high_capacity ? "SD: SDHC card\n" : "SD: SDSC card\n");
     
-    // CMD2 - Get CID
+    // CMD2 - Get CID (State: Identification)
     uart_puts("SD: CMD2...\n");
     if (sd_send_cmd(CMD_ALL_SEND_CID, 0, SDCMD_LONG_RESPONSE) != SD_OK) {
         return SD_ERROR;
     }
     
-    // CMD3 - Get RCA
+    // CMD3 - Get RCA (State: Stand-by)
     uart_puts("SD: CMD3...\n");
     if (sd_send_cmd(CMD_SEND_REL_ADDR, 0, 0) != SD_OK) {
         return SD_ERROR;
     }
     sd_rca = *SDRSP0 & 0xFFFF0000;
     
-    // CMD7 - Select card
+    /* ------------------------------------------------ */
+    /* === NEW: CMD9 and Sector Calculation === */
+    /* ------------------------------------------------ */
+    
+    // CMD9 - SEND_CSD (Must be done while card is in Stand-by State)
+    uart_puts("SD: CMD9...\n");
+    // Temporarily slow the clock down for stability when reading CSD
+    uint32_t old_div = *SDCDIV;
+    *SDCDIV = 0x1FB;
+    sd_delay_ms(20);
+    
+    if (sd_send_cmd(CMD_SEND_CSD, sd_rca, SDCMD_LONG_RESPONSE) != SD_OK) {
+        uart_puts("SD: CMD9 failed\n");
+        *SDCDIV = old_div; // Restore clock before error exit
+        return SD_ERROR;
+    }
+    
+    // Restore clock speed immediately after reading CSD
+    *SDCDIV = old_div; 
+
+    // Read 128-bit CSD
+    csd[0] = *SDRSP0;
+    csd[1] = *SDRSP1;
+    csd[2] = *SDRSP2;
+    csd[3] = *SDRSP3;
+
+    // Calculate total sectors and store globally
+    sd_total_sectors = 0;
+    uint32_t csd_structure = (csd[3] >> 30) & 0x3;
+
+    if (csd_structure == 1) {
+        /* SDHC / SDXC (CSD v2.0) */
+        uint32_t c_size = ((csd[2] & 0x3F) << 16) | ((csd[1] >> 16) & 0xFFFF);
+        sd_total_sectors = (c_size + 1) * 1024;
+        uart_puts("SD: Sector count (SDHC) calculated.\n");
+    } else {
+        /* SDSC (CSD v1.0) */
+        uint32_t c_size = ((csd[2] >> 30) & 0x3) | ((csd[1] & 0x3FF) << 2) | ((csd[2] >> 16) & 0x3);
+        uint32_t c_size_mult = ((csd[1] >> 15) & 0x7);
+        uint32_t read_bl_len = (csd[2] >> 8) & 0xF;
+        
+        uint32_t block_len = 1 << read_bl_len;
+        uint32_t mult = 1 << (c_size_mult + 2);
+        uint32_t block_count = (c_size + 1) * mult;
+
+        sd_total_sectors = (block_count * block_len) / 512;
+        uart_puts("SD: Sector count (SDSC) calculated.\n");
+    }
+    
+    /* ------------------------------------------------ */
+    /* === END: CMD9 and Sector Calculation === */
+    /* ------------------------------------------------ */
+
+    // CMD7 - Select card (State: Transfer)
     uart_puts("SD: CMD7...\n");
     if (sd_send_cmd(CMD_SELECT_CARD, sd_rca, SDCMD_BUSY_CMD) != SD_OK) {
         return SD_ERROR;
@@ -292,9 +347,7 @@ int sd_init(void) {
     }
 
     // 2. Tell the Controller to use 4-bit bus (SDHCFG register)
-    // SDHCFG bit 0 controls the bus width (1 = 4-bit, 0 = 1-bit)
     uint32_t hcfg = *SDHCFG;
-    // Ensure other bits are preserved or cleared as necessary. We are setting bit 0.
     hcfg |= 1; 
     *SDHCFG = hcfg;
     
@@ -311,6 +364,12 @@ int sd_init(void) {
     
     uart_puts("=== SD Ready ===\n\n");
     return SD_OK;
+}
+
+// And then, your sd_get_sector_count function becomes trivial:
+uint32_t sd_get_sector_count(void)
+{
+    return sd_total_sectors;
 }
 
 int sd_read(uint32_t sector, uint32_t count, uint8_t* buffer) {
@@ -429,11 +488,6 @@ int sd_write(uint32_t sector, uint32_t count, const uint8_t *buffer)
 
     return SD_OK;
 }
-
-uint32_t sd_get_sector_count(void) {
-    return 0;
-}
-
 
 void test_sd_write(void) {
     uart_puts("\n=== SD WRITE TEST ===\n");

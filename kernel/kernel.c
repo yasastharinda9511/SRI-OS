@@ -4,6 +4,8 @@
 #include "./scheduler/task.h"
 #include "../shell/shell.h"
 #include "../drivers/sd/sd.h"
+#include "../block/block.h"
+#include "../drivers/sd/sd_block.h"
 
 // Background task - blinks LED
 void task_blink(void) {
@@ -36,10 +38,25 @@ void kernel_main(void) {
     uart_puts("  SriOS - Pi Zero 2W\n");
     uart_puts("================================\n\n");
 
-    sd_init();
+    if (sd_init() != SD_OK)
+    {
+        uart_puts("SD Card init failed!\n");
+    }
 
     test_sd_read();
-    test_sd_write();
+    sd_block_init();      // registers sd0
+
+    block_device_t *dev = block_get("sd0");
+    if (!dev) {
+        uart_puts("No block device\n");
+        return;
+    }
+
+    uint32_t sector_count = dev->sector_count();
+    uart_puts("Sector count: ");
+    uart_puthex(sector_count);
+    uart_puts("\n");
+
     // Set VBAR
     extern char _vectors;
     uint32_t vec_addr = (uint32_t)&_vectors;

@@ -14,10 +14,11 @@ DRIVERS_DIR = drivers
 SHELL_DIR = shell
 UTILS_DIR = utils
 SCHEDULER_DIR = kernel/scheduler
+BLOCK_DIR = block
 
 # Flags - Pi Zero 2W uses Cortex-A53
 CFLAGS = -mcpu=cortex-a53 -O2 -ffreestanding -fno-pic -std=gnu11 -Wall -Wextra
-CFLAGS += -I$(KERNEL_DIR) -I$(DRIVERS_DIR) -I$(SHELL_DIR) -I$(SCHEDULER_DIR)
+CFLAGS += -I$(KERNEL_DIR) -I$(DRIVERS_DIR) -I$(SHELL_DIR) -I$(SCHEDULER_DIR) -I$(BLOCK_DIR)
 ASFLAGS = -mcpu=cortex-a53
 LDFLAGS = -nostdlib -T linker.ld
 
@@ -38,7 +39,9 @@ OBJS = $(BUILD_DIR)/boot.o \
 	   $(BUILD_DIR)/commands.o \
 	   $(BUILD_DIR)/cmd_system.o \
 	   $(BUILD_DIR)/string_utils.o \
-	   $(BUILD_DIR)/sd.o
+	   $(BUILD_DIR)/sd.o \
+	   $(BUILD_DIR)/sd_block.o \
+	   $(BUILD_DIR)/block.o
 
 all: $(BUILD_DIR) kernel.img
 
@@ -84,7 +87,8 @@ $(BUILD_DIR)/gpio.o: $(DRIVERS_DIR)/gpio/gpio.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD_DIR)/sd.o: $(DRIVERS_DIR)/sd/sd.c
 	$(CC) $(CFLAGS) -c $< -o $@
-
+$(BUILD_DIR)/sd_block.o: $(DRIVERS_DIR)/sd/sd_block.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # Shell
 $(BUILD_DIR)/shell.o: $(SHELL_DIR)/shell.c
@@ -92,6 +96,10 @@ $(BUILD_DIR)/shell.o: $(SHELL_DIR)/shell.c
 $(BUILD_DIR)/commands.o: $(SHELL_DIR)/commands/commands.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD_DIR)/cmd_system.o: $(SHELL_DIR)/commands/cmd_system.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Block devices
+$(BUILD_DIR)/block.o: $(BLOCK_DIR)/block.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Utils
