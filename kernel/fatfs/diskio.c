@@ -8,13 +8,11 @@ extern block_device_t sd_block_dev;
 /* Drive 0 = SD card */
 
 DSTATUS disk_initialize(BYTE pdrv) {
-    uart_puts("disk_initialize called\n");
     if (pdrv != 0) return STA_NOINIT;
     return 0;
 }
 
 DSTATUS disk_status(BYTE pdrv) {
-    uart_puts("disk_status called\n");
     if (pdrv != 0) return STA_NOINIT;
     return 0;
 }
@@ -27,7 +25,6 @@ DRESULT disk_read(
 ) {
     if (pdrv != 0) return RES_PARERR;
     if (sd_block_dev.read(sector, count, buff) == 0){
-        uart_puts("disk_read: read OK\n");
         return RES_OK;
     }
         
@@ -41,7 +38,6 @@ DRESULT disk_write(
     LBA_t sector,
     UINT count
 ) {
-    uart_puts("disk_status called\n");
     if (pdrv != 0) return RES_PARERR;
     if (sd_block_dev.write(sector, count, buff) == 0)
         return RES_OK;

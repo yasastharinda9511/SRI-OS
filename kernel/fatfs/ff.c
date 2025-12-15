@@ -3372,9 +3372,6 @@ static UINT check_fs (	/* 0:FAT/FAT32 VBR, 1:exFAT VBR, 2:Not FAT and valid BS, 
 	if (move_window(fs, sect) != FR_OK) return 4;	/* Load the boot sector */
 	sign = ld_16(fs->win + BS_55AA);
 
-	uart_puts("check_fs: sign=");
-	uart_puthex(sign);
-	uart_puts("\n");
 #if FF_FS_EXFAT
 	if (sign == 0xAA55 && !memcmp(fs->win + BS_JmpBoot, "\xEB\x76\x90" "EXFAT   ", 11)) return 1;	/* It is an exFAT VBR */
 #endif
@@ -3415,8 +3412,6 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 	fmt = check_fs(fs, 0);				/* Load sector 0 and check if it is an FAT VBR as SFD format */
 	if (fmt != 2 && (fmt >= 3 || part == 0)) return fmt;	/* Returns if it is an FAT VBR as auto scan, not a BS or disk error */
 
-	uart_puts("Sign is Ok !!!\n");
-
 	/* Sector 0 is not an FAT VBR or forced partition number wants a partitioned drive */
 
 #if FF_LBA64
@@ -3441,35 +3436,14 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 		return 3;	/* Not found */
 	}
 #endif
-	uart_puts("Not GPT\n");
 	if (FF_MULTI_PARTITION && part > 4) return 3;	/* MBR has four primary partitions max (FatFs does not support logical partition) */
-	uart_puts("Not GPT\n");
 	for (i = 0; i < 4; i++) {		/* Load partition offset in the MBR */
-		uart_puts("Called this !!! \n");
-		uart_puthex(*(fs->win + 510));
-		uart_puthex(*(fs->win + 511));
-		uart_putc('\n');
 		mbr_pt[i] = ld_32(fs->win + MBR_Table + i * SZ_PTE + PTE_StLba);
-
-		// DWORD lba = (DWORD)fs->win[MBR_Table + i*SZ_PTE + 8] |
-        //         ((DWORD)fs->win[MBR_Table + i*SZ_PTE + 9] << 8) |
-        //         ((DWORD)fs->win[MBR_Table + i*SZ_PTE +10] << 16) |
-        //         ((DWORD)fs->win[MBR_Table + i*SZ_PTE +11] << 24);
-
-		// mbr_pt[i] = lba;
-		uart_puts("Partition LBA: ");
-		uart_puthex(mbr_pt[i]);
-		uart_putc('\n');
 	}
 	i = part ? part - 1 : 0;		/* Table index to find first */
-	uart_puts("Finding partition\n");
 	do {							/* Find an FAT volume */
 		fmt = mbr_pt[i] ? check_fs(fs, mbr_pt[i]) : 3;	/* Check if the partition is FAT */
 	} while (part == 0 && fmt >= 2 && ++i < 4);
-
-	uart_puts("Partition found\n");
-	uart_puthex(fmt);
-	uart_puts("\n");
 	return fmt;
 }
 
@@ -3522,18 +3496,12 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 
 	fs->fs_type = 0;					/* Invalidate the filesystem object */
 	stat = disk_initialize(fs->pdrv);	/* Initialize the volume hosting physical drive */
-	uart_puts("disk_initialize returned ");
-	uart_puthex(stat);
-	uart_puts("\n");
 	if (stat & STA_NOINIT) { 			/* Check if the initialization succeeded */
 		return FR_NOT_READY;			/* Failed to initialize due to no medium or hard error */
 	}
 	if (!FF_FS_READONLY && mode && (stat & STA_PROTECT)) { /* Check disk write protection if needed */
 		return FR_WRITE_PROTECTED;
 	}
-
-	uart_puts("Disk initialized successfully\n");
-	uart_puts("\n");
 #if FF_MAX_SS != FF_MIN_SS				/* Get sector size (multiple sector size cfg only) */
 	if (disk_ioctl(fs->pdrv, GET_SECTOR_SIZE, &SS(fs)) != RES_OK) return FR_DISK_ERR;
 	if (SS(fs) > FF_MAX_SS || SS(fs) < FF_MIN_SS || (SS(fs) & (SS(fs) - 1))) return FR_DISK_ERR;
@@ -3545,14 +3513,9 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 	if (fmt >= 2) return FR_NO_FILESYSTEM;	/* No FAT volume is found */
 	bsect = fs->winsect;					/* Volume offset in the hosting physical drive */
 
-	uart_puts("bsect value is :" );
-	uart_puthex(bsect);
-	uart_putc('\n');
-
 	/* An FAT volume is found (bsect). Following code initializes the filesystem object */
 
 #if FF_FS_EXFAT
-	uart_puts("inside the FF_FS_EXFAT :" );
 	if (fmt == 1) {
 		QWORD maxlba;
 		DWORD so, cv, bcl, ncl, i;
@@ -3616,7 +3579,6 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 	} else
 #endif	/* FF_FS_EXFAT */
 	{
-		uart_puts("inside normal flow: \n" );
 
 		DWORD tsect, sysect, fasize, nclst, szbfat;
 		WORD nrsv;
@@ -3784,14 +3746,8 @@ FRESULT f_mount (
 
 
 	/* Get volume ID (logical drive number) */
-	uart_puts("f_mount: path=");
-	uart_puts(path);
-	uart_puts("\n");
 	vol = get_ldnumber(&rp);
 
-	uart_puts("f_mount: vol=");
-	uart_puthex(vol);
-	uart_puts("\n");
 	if (vol < 0) return FR_INVALID_DRIVE;
 
 	cfs = FatFs[vol];			/* Pointer to the filesystem object of the volume */

@@ -38,6 +38,7 @@ OBJS = $(BUILD_DIR)/boot.o \
        $(BUILD_DIR)/gpio.o \
 	   $(BUILD_DIR)/commands.o \
 	   $(BUILD_DIR)/cmd_system.o \
+	   $(BUILD_DIR)/cmd_fs.o \
 	   $(BUILD_DIR)/string_utils.o \
 	   $(BUILD_DIR)/sd.o \
 	   $(BUILD_DIR)/sd_block.o \
@@ -108,6 +109,8 @@ $(BUILD_DIR)/shell.o: $(SHELL_DIR)/shell.c
 $(BUILD_DIR)/commands.o: $(SHELL_DIR)/commands/commands.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD_DIR)/cmd_system.o: $(SHELL_DIR)/commands/cmd_system.c
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/cmd_fs.o: $(SHELL_DIR)/commands/cmd_fs.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Utils

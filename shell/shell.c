@@ -15,6 +15,7 @@
 
 // Include command modules here
 #include "commands/cmd_system.h"
+#include "commands/cmd_fs.h"
 // #include "commands/cmd_files.h"    // Add when ready
 // #include "commands/cmd_task.h"     // Add when ready
 
@@ -24,6 +25,7 @@
  */
 static void all_commands_init(void) {
     cmd_system_init();      // help, info, uptime, clear, reboot
+    cmd_fs_init();
     // cmd_files_init();    // ls, cat, touch, rm, write, edit
     // cmd_task_init();     // ps, kill
 }
