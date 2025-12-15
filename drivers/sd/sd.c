@@ -373,9 +373,16 @@ uint32_t sd_get_sector_count(void)
 }
 
 int sd_read(uint32_t sector, uint32_t count, uint8_t* buffer) {
+    uart_puts("SD: Read ");;
+    uart_puthex(count);
+    uart_puts(" sectors from ");;
+    uart_puthex(sector);
+    uart_puts("\n");
     uint32_t* buf = (uint32_t*)buffer;
     uint32_t addr = sd_high_capacity ? sector : (sector * 512);
     int timeout;
+
+    uart_puts(" reading...\n");
     
     for (uint32_t block = 0; block < count; block++) {
         // 1. Clear status
@@ -410,9 +417,6 @@ int sd_read(uint32_t sector, uint32_t count, uint8_t* buffer) {
             }
             buf[i] = word;
         }   
-
-        
-        // 6. Wait for transfer complete
         timeout = 100000;
         while (!(*SDHSTS & SDHSTS_BLOCK_IRPT) && timeout--) {
             // Check for errors at end of block
@@ -424,6 +428,7 @@ int sd_read(uint32_t sector, uint32_t count, uint8_t* buffer) {
         }
     }
     
+    uart_puts("read done\n");
     return SD_OK;
 }
 int sd_write(uint32_t sector, uint32_t count, const uint8_t *buffer)

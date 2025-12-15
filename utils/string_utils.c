@@ -47,3 +47,47 @@ void str_concat(char* dst, const char* src, int max) {
     }
     dst[dst_len + i] = '\0';
 }
+
+char *strchr(const char *s, int c) {
+    char ch = (char)c;
+
+    while (*s) {
+        if (*s == ch)
+            return (char *)s;
+        s++;
+    }
+
+    /* Check for terminating null */
+    if (ch == '\0')
+        return (char *)s;
+
+    return 0;
+}
+
+int memcmp(const void *s1, const void *s2, size_t n) {
+    const unsigned char *a = s1;
+    const unsigned char *b = s2;
+
+    while (n--) {
+        if (*a != *b)
+            return *a - *b;
+        a++;
+        b++;
+    }
+    return 0;
+}
+
+// memcpy: copy n bytes from src to dest
+void *memcpy(void *dest, const void *src, size_t n) {
+    unsigned char *d = dest;
+    const unsigned char *s = src;
+    while (n--) *d++ = *s++;
+    return dest;
+}
+
+// memset: fill n bytes of s with c
+void *memset(void *s, int c, size_t n) {
+    unsigned char *p = s;
+    while (n--) *p++ = (unsigned char)c;
+    return s;
+}

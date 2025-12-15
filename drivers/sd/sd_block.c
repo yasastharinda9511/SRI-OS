@@ -26,7 +26,7 @@ static uint32_t sd_block_sector_count(void) {
     return sd_get_sector_count();
 }
 
-static block_device_t sd_block_dev = {
+block_device_t sd_block_dev = {
     .name = "sd0",
     .read = sd_block_read,
     .write = sd_block_write,

@@ -7,6 +7,10 @@
 #include "../block/block.h"
 #include "../drivers/sd/sd_block.h"
 
+// Include FATFS headers
+#include "../kernel/fatfs/ff.h"
+#include "../kernel/fatfs/diskio.h"
+
 // Background task - blinks LED
 void task_blink(void) {
     gpio_set_output(23);
@@ -24,7 +28,6 @@ void task_blink(void) {
 void task_counter(void) {
     int count = 0;
     while (1) {
-        // Runs silently in background
         count++;
         for(volatile int i = 0; i < 5000000; i++);
     }
@@ -38,24 +41,47 @@ void kernel_main(void) {
     uart_puts("  SriOS - Pi Zero 2W\n");
     uart_puts("================================\n\n");
 
-    if (sd_init() != SD_OK)
-    {
+    // Initialize SD card
+    if (sd_init() != SD_OK) {
         uart_puts("SD Card init failed!\n");
+    } else {
+        uart_puts("SD Card initialized successfully\n");
     }
-
-    test_sd_read();
-    sd_block_init();      // registers sd0
-
+    
+    sd_block_init();
     block_device_t *dev = block_get("sd0");
     if (!dev) {
         uart_puts("No block device\n");
         return;
     }
+    // Mount FAT32
+    static FATFS fs;
+    FRESULT res;
 
-    uint32_t sector_count = dev->sector_count();
-    uart_puts("Sector count: ");
-    uart_puthex(sector_count);
+    uart_puts("Mounting FATFS...\n");
+
+    res = f_mount(&fs, "0:", 1);
+    uart_puts("f_mount returned: ");
+    uart_puthex(res);
     uart_puts("\n");
+
+    if (res == FR_OK) {
+        FIL file;
+        UINT bw;
+
+        res = f_open(&file, "0:/test.txt", FA_CREATE_ALWAYS | FA_WRITE);
+        if (res == FR_OK) {
+            f_write(&file, "Hello FATFS\n", 12, &bw);
+            f_close(&file);
+            uart_puts("File written OK\n");
+        } else {
+            uart_puts("f_open failed: ");
+            uart_puthex(res);
+            uart_puts("\n");
+        }
+    }else {
+        uart_puts("f_mount failed\n");
+    }
 
     // Set VBAR
     extern char _vectors;
