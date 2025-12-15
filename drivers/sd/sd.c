@@ -285,21 +285,10 @@ int sd_init(void) {
     /* === NEW: CMD9 and Sector Calculation === */
     /* ------------------------------------------------ */
     
-    // CMD9 - SEND_CSD (Must be done while card is in Stand-by State)
-    uart_puts("SD: CMD9...\n");
-    // Temporarily slow the clock down for stability when reading CSD
-    uint32_t old_div = *SDCDIV;
-    *SDCDIV = 0x1FB;
-    sd_delay_ms(20);
-    
     if (sd_send_cmd(CMD_SEND_CSD, sd_rca, SDCMD_LONG_RESPONSE) != SD_OK) {
         uart_puts("SD: CMD9 failed\n");
-        *SDCDIV = old_div; // Restore clock before error exit
         return SD_ERROR;
     }
-    
-    // Restore clock speed immediately after reading CSD
-    *SDCDIV = old_div; 
 
     // Read 128-bit CSD
     csd[0] = *SDRSP0;
