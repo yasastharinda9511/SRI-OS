@@ -361,65 +361,62 @@ uint32_t sd_get_sector_count(void)
     return sd_total_sectors;
 }
 
-int sd_read(uint32_t sector, uint32_t count, uint8_t* buffer) {
-    uart_puts("SD: Read ");;
-    uart_puthex(count);
-    uart_puts(" sectors from ");;
-    uart_puthex(sector);
-    uart_puts("\n");
-    uint32_t* buf = (uint32_t*)buffer;
-    uint32_t addr = sd_high_capacity ? sector : (sector * 512);
-    int timeout;
+int sd_read(uint32_t sector, uint32_t count, uint8_t *buffer)
+{
+    uint32_t addr = sd_high_capacity ? sector : sector * 512;
 
-    uart_puts(" reading...\n");
-    
-    for (uint32_t block = 0; block < count; block++) {
-        // 1. Clear status
+    for (uint32_t blk = 0; blk < count; blk++) {
+
         *SDHSTS = SDHSTS_CLEAR_MASK;
-        
-        // 2. Setup transfer block size
         *SDHBCT = 512;
         *SDHBLC = 1;
-        
-        // 3. Send read command
-        *SDARG = addr + (sd_high_capacity ? block : block * 512);
+
+        *SDARG = addr + (sd_high_capacity ? blk : blk * 512);
         *SDCMD = CMD_READ_SINGLE | SDCMD_NEW_FLAG | SDCMD_READ_CMD;
-        
-        // 4. Wait for command to be accepted
-        timeout = 100000;
-        while ((*SDCMD & SDCMD_NEW_FLAG) && timeout--) {
-            sd_delay_us(1); // Delay is OK here (waiting for command, not data)
-        }
-        
+
+        int timeout = 100000;
+        while ((*SDCMD & SDCMD_NEW_FLAG) && timeout--)
+            sd_delay_us(1);
+
         if (timeout <= 0 || (*SDCMD & SDCMD_FAIL_FLAG)) {
-            uart_puts("SD: CMD error\n");
-            *SDHSTS = SDHSTS_ERROR_MASK; // Reset error bits
+            *SDHSTS = SDHSTS_ERROR_MASK;
             return SD_ERROR;
         }
-        
-        // 5. Read 128 words (512 bytes)
-        for (int i = 0; i < 128; i++) {
-            uint32_t word = 0;
-            for (int b = 0; b < 4; b++) {
-                while (!(*SDHSTS & SDHSTS_DATA_FLAG)) {}
-                word |= (uint32_t)(*(volatile uint8_t*)SDDATA) << (8 * b);
+
+        int remaining = 512;
+
+        while (remaining > 0) {
+
+            int fifo =
+                (*SDEDM >> SDEDM_FIFO_FILL_SHIFT) & SDEDM_FIFO_FILL_MASK;
+
+            if (!fifo)
+                continue;
+
+            if (fifo > remaining)
+                fifo = remaining;
+
+            for (int i = 0; i < fifo; i++) {
+                *buffer++ = *(volatile uint8_t *)SDDATA;
             }
-            buf[i] = word;
-        }   
+
+            remaining -= fifo;
+        }
+
         timeout = 100000;
         while (!(*SDHSTS & SDHSTS_BLOCK_IRPT) && timeout--) {
-            // Check for errors at end of block
-             if (*SDHSTS & SDHSTS_ERROR_MASK) {
+            if (*SDHSTS & SDHSTS_ERROR_MASK) {
                 *SDHSTS = SDHSTS_ERROR_MASK;
                 return SD_ERROR;
             }
-            sd_delay_us(1);
         }
     }
-    
-    uart_puts("read done\n");
+
     return SD_OK;
 }
+
+
+
 int sd_write(uint32_t sector, uint32_t count, const uint8_t *buffer)
 {
     uint32_t addr = sd_high_capacity ? sector : (sector * 512);
