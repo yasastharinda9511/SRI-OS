@@ -1,87 +1,85 @@
 /*
- * sd.c - SD Card Driver based on u-boot bcm2835_sdhost.c
+ * sd_emmc.c - SD Card Driver using EMMC controller
+ * 
+ * Must request SD power from GPU via mailbox before use!
  */
 
 #include "sd.h"
 #include "../uart/uart.h"
 
-// SDHOST registers
-#define SDHOST_BASE     0x3F202000
+// EMMC registers at 0x3F300000
+#define EMMC_BASE       0x3F300000
 
-#define SDCMD           ((volatile uint32_t*)(SDHOST_BASE + 0x00))
-#define SDARG           ((volatile uint32_t*)(SDHOST_BASE + 0x04))
-#define SDTOUT          ((volatile uint32_t*)(SDHOST_BASE + 0x08))
-#define SDCDIV          ((volatile uint32_t*)(SDHOST_BASE + 0x0C))
-#define SDRSP0          ((volatile uint32_t*)(SDHOST_BASE + 0x10))
-#define SDRSP1          ((volatile uint32_t*)(SDHOST_BASE + 0x14))
-#define SDRSP2          ((volatile uint32_t*)(SDHOST_BASE + 0x18))
-#define SDRSP3          ((volatile uint32_t*)(SDHOST_BASE + 0x1C))
-#define SDHSTS          ((volatile uint32_t*)(SDHOST_BASE + 0x20))
-#define SDVDD           ((volatile uint32_t*)(SDHOST_BASE + 0x30))
-#define SDEDM           ((volatile uint32_t*)(SDHOST_BASE + 0x34))
-#define SDHCFG          ((volatile uint32_t*)(SDHOST_BASE + 0x38))
-#define SDHBCT          ((volatile uint32_t*)(SDHOST_BASE + 0x3C))
-#define SDDATA          ((volatile uint32_t*)(SDHOST_BASE + 0x40))
-#define SDHBLC          ((volatile uint32_t*)(SDHOST_BASE + 0x50))
+#define EMMC_ARG2       ((volatile uint32_t*)(EMMC_BASE + 0x00))
+#define EMMC_BLKSIZECNT ((volatile uint32_t*)(EMMC_BASE + 0x04))
+#define EMMC_ARG1       ((volatile uint32_t*)(EMMC_BASE + 0x08))
+#define EMMC_CMDTM      ((volatile uint32_t*)(EMMC_BASE + 0x0C))
+#define EMMC_RESP0      ((volatile uint32_t*)(EMMC_BASE + 0x10))
+#define EMMC_RESP1      ((volatile uint32_t*)(EMMC_BASE + 0x14))
+#define EMMC_RESP2      ((volatile uint32_t*)(EMMC_BASE + 0x18))
+#define EMMC_RESP3      ((volatile uint32_t*)(EMMC_BASE + 0x1C))
+#define EMMC_DATA       ((volatile uint32_t*)(EMMC_BASE + 0x20))
+#define EMMC_STATUS     ((volatile uint32_t*)(EMMC_BASE + 0x24))
+#define EMMC_CONTROL0   ((volatile uint32_t*)(EMMC_BASE + 0x28))
+#define EMMC_CONTROL1   ((volatile uint32_t*)(EMMC_BASE + 0x2C))
+#define EMMC_INTERRUPT  ((volatile uint32_t*)(EMMC_BASE + 0x30))
+#define EMMC_IRPT_MASK  ((volatile uint32_t*)(EMMC_BASE + 0x34))
+#define EMMC_IRPT_EN    ((volatile uint32_t*)(EMMC_BASE + 0x38))
+#define EMMC_CONTROL2   ((volatile uint32_t*)(EMMC_BASE + 0x3C))
+#define EMMC_SLOTISR_VER ((volatile uint32_t*)(EMMC_BASE + 0xFC))
 
-// SDCMD register bits
-#define SDCMD_NEW_FLAG          0x8000
-#define SDCMD_FAIL_FLAG         0x4000
-#define SDCMD_BUSY_CMD          0x0800
-#define SDCMD_NO_RESPONSE       0x0400
-#define SDCMD_LONG_RESPONSE     0x0200
-#define SDCMD_WRITE_CMD         0x0080
-#define SDCMD_READ_CMD          0x0040
-#define SDCMD_CMD_MASK          0x003f
+// STATUS register bits
+#define SR_READ_AVAILABLE   (1 << 11)
+#define SR_WRITE_AVAILABLE  (1 << 10)
+#define SR_DAT_INHIBIT      (1 << 1)
+#define SR_CMD_INHIBIT      (1 << 0)
 
-// SDHSTS register bits
-#define SDHSTS_BUSY_IRPT        0x0400
-#define SDHSTS_BLOCK_IRPT       0x0200
-#define SDHSTS_SDIO_IRPT        0x0100
-#define SDHSTS_REW_TIME_OUT     0x0080
-#define SDHSTS_CMD_TIME_OUT     0x0040
-#define SDHSTS_CRC16_ERROR      0x0020
-#define SDHSTS_CRC7_ERROR       0x0010
-#define SDHSTS_FIFO_ERROR       0x0008
-#define SDHSTS_DATA_FLAG        0xFF
+// INTERRUPT register bits
+#define INT_DATA_DONE       (1 << 1)
+#define INT_CMD_DONE        (1 << 0)
+#define INT_READ_RDY        (1 << 5)
+#define INT_WRITE_RDY       (1 << 4)
+#define INT_DATA_TIMEOUT    (1 << 20)
+#define INT_CMD_TIMEOUT     (1 << 16)
+#define INT_ERR             (1 << 15)
+#define INT_ERROR_MASK      0xFFFF0000
+#define INT_ALL_MASK        0xFFFF003F
 
-#define SDHSTS_CLEAR_MASK       0x07FF
-#define SDHSTS_ERROR_MASK       (SDHSTS_CMD_TIME_OUT | SDHSTS_CRC16_ERROR | \
-                                 SDHSTS_CRC7_ERROR | SDHSTS_REW_TIME_OUT | \
-                                 SDHSTS_FIFO_ERROR)
+// CONTROL1 register bits
+#define C1_SRST_HC          (1 << 24)
+#define C1_SRST_CMD         (1 << 25)
+#define C1_SRST_DATA        (1 << 26)
+#define C1_TOUNIT_MAX       (0x0E << 16)
+#define C1_CLK_EN           (1 << 2)
+#define C1_CLK_STABLE       (1 << 1)
+#define C1_CLK_INTLEN       (1 << 0)
 
-// SDEDM register bits
-#define SDEDM_FSM_MASK          0x000F
-#define SDEDM_FSM_IDENTMODE     0x0
-#define SDEDM_FSM_DATAMODE      0x1
-#define SDEDM_FSM_READDATA      0x2
-#define SDEDM_FSM_WRITEDATA     0x3
-#define SDEDM_FSM_READWAIT      0x4
-#define SDEDM_FSM_READCRC       0x5
-#define SDEDM_FSM_WRITECRC      0x6
-#define SDEDM_FSM_WRITEWAIT1    0x7
-#define SDEDM_FSM_WRITEWAIT2    0x8
-#define SDEDM_FSM_WRITESTART1   0xf
-#define SDEDM_FSM_WRITESTART2   0xa
-#define SDEDM_FIFO_FILL_SHIFT   4
-#define SDEDM_FIFO_FILL_MASK    0x1f
+// Command flags
+#define CMD_NEED_APP        0x80000000
+#define CMD_RSPNS_48        (2 << 16)
+#define CMD_RSPNS_136       (1 << 16)
+#define CMD_RSPNS_48B       (3 << 16)
+#define CMD_ISDATA          (1 << 21)
+#define CMD_DAT_DIR_CH      (1 << 4)   // Card to Host (read)
+#define CMD_DAT_DIR_HC      0          // Host to Card (write)
 
-#define SDEDM_WRITE_THRESHOLD_SHIFT 9
-#define SDEDM_READ_THRESHOLD_SHIFT  14
-#define SDEDM_THRESHOLD_MASK        0x1f
-
-#define FIFO_READ_THRESHOLD     4
-#define FIFO_WRITE_THRESHOLD    4
-#define SDDATA_FIFO_WORDS       16
-
-// GPIO registers
+// GPIO
 #define GPIO_BASE       0x3F200000
 #define GPFSEL4         ((volatile uint32_t*)(GPIO_BASE + 0x10))
 #define GPFSEL5         ((volatile uint32_t*)(GPIO_BASE + 0x14))
 #define GPPUD           ((volatile uint32_t*)(GPIO_BASE + 0x94))
 #define GPPUDCLK1       ((volatile uint32_t*)(GPIO_BASE + 0x9C))
 
-// SD commands
+// Mailbox for GPU communication
+#define MBOX_BASE       0x3F00B880
+#define MBOX_READ       ((volatile uint32_t*)(MBOX_BASE + 0x00))
+#define MBOX_STATUS     ((volatile uint32_t*)(MBOX_BASE + 0x18))
+#define MBOX_WRITE      ((volatile uint32_t*)(MBOX_BASE + 0x20))
+#define MBOX_FULL       0x80000000
+#define MBOX_EMPTY      0x40000000
+#define MBOX_CHANNEL    8  // Property channel
+
+// Commands
 #define CMD_GO_IDLE         0
 #define CMD_SEND_IF_COND    8
 #define CMD_STOP_TRANS      12
@@ -95,10 +93,7 @@
 #define CMD_ALL_SEND_CID    2
 #define CMD_SEND_REL_ADDR   3
 #define CMD_SELECT_CARD     7
-#define ACMD_SET_BUS_WIDTH  6
-#define CMD_SEND_CSD 9
-
-#define TEST_SECTOR      4096
+#define CMD_SEND_CSD        9
 
 static uint32_t sd_rca = 0;
 static int sd_high_capacity = 0;
@@ -118,413 +113,472 @@ static void sd_delay_ms(uint32_t ms) {
     sd_delay_us(ms * 1000);
 }
 
+// Mailbox property call - CRITICAL for getting SD card access!
+static volatile uint32_t __attribute__((aligned(16))) mbox_buffer[32];
+
+static int mbox_call(uint8_t channel) {
+    uint32_t addr = ((uint32_t)&mbox_buffer) & ~0xF;
+    
+    // Wait until mailbox is not full
+    while (*MBOX_STATUS & MBOX_FULL) {
+        sd_delay(1);
+    }
+    
+    // Write address + channel
+    *MBOX_WRITE = addr | channel;
+    
+    // Wait for response
+    while (1) {
+        while (*MBOX_STATUS & MBOX_EMPTY) {
+            sd_delay(1);
+        }
+        if (*MBOX_READ == (addr | channel)) {
+            return mbox_buffer[1] == 0x80000000;
+        }
+    }
+}
+
+static int sd_power_on(void) {
+    // Request power for SD card (device ID 0)
+    mbox_buffer[0] = 8 * 4;          // Buffer size
+    mbox_buffer[1] = 0;              // Request code
+    mbox_buffer[2] = 0x28001;        // Tag: Set power state
+    mbox_buffer[3] = 8;              // Value buffer size
+    mbox_buffer[4] = 8;              // Request size
+    mbox_buffer[5] = 0;              // Device ID: SD card
+    mbox_buffer[6] = 3;              // State: ON + WAIT
+    mbox_buffer[7] = 0;              // End tag
+    
+    if (!mbox_call(MBOX_CHANNEL)) {
+        uart_puts("SD: Power on mailbox failed\n");
+        return -1;
+    }
+    
+    uart_puts("SD: Power on result = ");
+    uart_puthex(mbox_buffer[6]);
+    uart_puts("\n");
+    
+    return 0;
+}
+
+static int sd_get_clock_rate(void) {
+    // Get clock rate for EMMC
+    mbox_buffer[0] = 8 * 4;
+    mbox_buffer[1] = 0;
+    mbox_buffer[2] = 0x30002;        // Tag: Get clock rate
+    mbox_buffer[3] = 8;
+    mbox_buffer[4] = 4;
+    mbox_buffer[5] = 1;              // Clock ID: EMMC
+    mbox_buffer[6] = 0;
+    mbox_buffer[7] = 0;
+    
+    if (!mbox_call(MBOX_CHANNEL)) {
+        return 0;
+    }
+    
+    return mbox_buffer[6];
+}
+
 static void sd_gpio_init(void) {
+    // GPIO 48-53 for EMMC - ALT3
     uint32_t sel4 = *GPFSEL4;
     uint32_t sel5 = *GPFSEL5;
     
-    // GPIO 48-53 for SDHOST - ALT0
-    sel4 &= ~(7 << 24); sel4 |= (4 << 24);  // GPIO48
-    sel4 &= ~(7 << 27); sel4 |= (4 << 27);  // GPIO49
-    sel5 &= ~(7 << 0);  sel5 |= (4 << 0);   // GPIO50
-    sel5 &= ~(7 << 3);  sel5 |= (4 << 3);   // GPIO51
-    sel5 &= ~(7 << 6);  sel5 |= (4 << 6);   // GPIO52
-    sel5 &= ~(7 << 9);  sel5 |= (4 << 9);   // GPIO53
+    // GPIO 48: bits 24-26, GPIO 49: bits 27-29
+    sel4 &= ~((7 << 24) | (7 << 27));
+    sel4 |= (7 << 24) | (7 << 27);  // ALT3 = 7
+    
+    // GPIO 50-53: bits 0-2, 3-5, 6-8, 9-11
+    sel5 &= ~((7 << 0) | (7 << 3) | (7 << 6) | (7 << 9));
+    sel5 |= (7 << 0) | (7 << 3) | (7 << 6) | (7 << 9);  // ALT3 = 7
     
     *GPFSEL4 = sel4;
     *GPFSEL5 = sel5;
     
-    *GPPUD = 2;
     sd_delay(150);
-    *GPPUDCLK1 = 0x3F << 16;
+    
+    // Pull-ups on data lines
+    *GPPUD = 2;  // Pull-up
+    sd_delay(150);
+    *GPPUDCLK1 = (1 << 16) | (1 << 17) | (1 << 18) | (1 << 19) | (1 << 20) | (1 << 21);
     sd_delay(150);
     *GPPUDCLK1 = 0;
     *GPPUD = 0;
 }
 
-static void sd_reset(void) {
-    uint32_t temp;
-    
-    *SDVDD = 0;  // Power off
-    *SDCMD = 0;
-    *SDARG = 0;
-    *SDTOUT = 0xF00000;
-    *SDCDIV = 0;
-    *SDHSTS = SDHSTS_CLEAR_MASK;
-    *SDHCFG = 0;
-    *SDHBCT = 0;
-    *SDHBLC = 0;
-    
-    // Set FIFO thresholds (silicon bug workaround)
-    temp = *SDEDM;
-    temp &= ~((SDEDM_THRESHOLD_MASK << SDEDM_READ_THRESHOLD_SHIFT) |
-              (SDEDM_THRESHOLD_MASK << SDEDM_WRITE_THRESHOLD_SHIFT));
-    temp |= (FIFO_READ_THRESHOLD << SDEDM_READ_THRESHOLD_SHIFT) |
-            (FIFO_WRITE_THRESHOLD << SDEDM_WRITE_THRESHOLD_SHIFT);
-    *SDEDM = temp;
-    
-    sd_delay_ms(20);
-    
-    *SDVDD = 1;  // Power on
-    sd_delay_ms(20);
-    
-    *SDHCFG = 0;
-    *SDCDIV = 0x1FB;  // ~400kHz (250MHz / 0x1FB)
+static int sd_wait_cmd(void) {
+    int timeout = 1000000;
+    while ((*EMMC_STATUS & SR_CMD_INHIBIT) && timeout--) {
+        sd_delay_us(1);
+    }
+    return (timeout > 0) ? SD_OK : SD_TIMEOUT;
 }
 
-static int sd_send_cmd(uint32_t cmd, uint32_t arg, uint32_t flags) {
-    uint32_t sdcmd;
-    int timeout;
-    
-    // Wait for not busy
-    timeout = 100000;
-    while ((*SDCMD & SDCMD_NEW_FLAG) && timeout--) {
-        sd_delay_us(1);
-    }
-    if (timeout <= 0) return SD_TIMEOUT;
-    
-    // Clear old status
-    *SDHSTS = SDHSTS_CLEAR_MASK;
-    
-    // Set argument
-    *SDARG = arg;
-    
-    // Build and send command
-    sdcmd = (cmd & SDCMD_CMD_MASK) | SDCMD_NEW_FLAG | flags;
-    *SDCMD = sdcmd;
-    
-    // Wait for command complete
-    timeout = 100000;
-    do {
-        sdcmd = *SDCMD;
-        sd_delay_us(1);
-    } while ((sdcmd & SDCMD_NEW_FLAG) && timeout--);
-    
-    if (timeout <= 0) return SD_TIMEOUT;
-    
-    // Check for errors
-    if (sdcmd & SDCMD_FAIL_FLAG) {
-        uint32_t hsts = *SDHSTS;
-        if (hsts & SDHSTS_ERROR_MASK) {
-            *SDHSTS = SDHSTS_ERROR_MASK;
-            return SD_ERROR;
-        }
+static int sd_send_cmd(uint32_t cmd, uint32_t arg) {
+    if (sd_wait_cmd() != SD_OK) {
+        uart_puts("SD: CMD inhibit timeout\n");
+        return SD_TIMEOUT;
     }
     
+    *EMMC_INTERRUPT = INT_ALL_MASK;
+    *EMMC_ARG1 = arg;
+    *EMMC_CMDTM = cmd;
+    
+    int timeout = 1000000;
+    while (!(*EMMC_INTERRUPT & (INT_CMD_DONE | INT_ERROR_MASK)) && timeout--) {
+        sd_delay_us(1);
+    }
+    
+    uint32_t irq = *EMMC_INTERRUPT;
+    
+    if (timeout <= 0) {
+        uart_puts("SD: CMD timeout\n");
+        return SD_TIMEOUT;
+    }
+    
+    if (irq & INT_ERROR_MASK) {
+        // Don't report errors for expected failures (CMD8, ACMD41)
+        *EMMC_INTERRUPT = irq;
+        return SD_ERROR;
+    }
+    
+    *EMMC_INTERRUPT = INT_CMD_DONE;
     return SD_OK;
 }
 
-static int sd_send_acmd(uint32_t cmd, uint32_t arg, uint32_t flags) {
-    if (sd_send_cmd(CMD_APP_CMD, sd_rca, 0) != SD_OK) {
+static int sd_send_acmd(uint32_t cmd, uint32_t arg) {
+    uint32_t cmd55 = (CMD_APP_CMD << 24) | CMD_RSPNS_48;
+    if (sd_send_cmd(cmd55, sd_rca) != SD_OK) {
         return SD_ERROR;
     }
-    return sd_send_cmd(cmd, arg, flags);
+    return sd_send_cmd(cmd, arg);
 }
-int sd_init(void) {
-    uint32_t temp;
-    int retries;
-    int32_t csd[4]; // Array to hold the CSD response
-    
-    uart_puts("\n=== SD Card Init ===\n");
-    
-    sd_gpio_init();
-    sd_reset();
-    
-    uart_puts("SD: Reset done\n");
-    
-    // CMD0 - Go idle (no response)
-    sd_send_cmd(CMD_GO_IDLE, 0, SDCMD_NO_RESPONSE);
-    sd_delay_ms(50);
-    
-    // CMD8 - Interface condition
-    uart_puts("SD: CMD8...\n");
-    int sd_v2 = 0;
-    if (sd_send_cmd(CMD_SEND_IF_COND, 0x1AA, 0) == SD_OK) {
-        temp = *SDRSP0;
-        if ((temp & 0xFFF) == 0x1AA) {
-            uart_puts("SD: v2.0 card\n");
-            sd_v2 = 1;
-        }
+
+static int sd_set_clock(uint32_t freq) {
+    // Get base clock
+    uint32_t base_clock = sd_get_clock_rate();
+    if (base_clock == 0) {
+        base_clock = 41666666;  // Default
     }
     
-    // ACMD41 - Operating condition
-    uart_puts("SD: ACMD41...\n");
+    uart_puts("SD: Base clock = ");
+    uart_puthex(base_clock);
+    uart_puts("\n");
+    
+    // Disable clock
+    uint32_t ctrl1 = *EMMC_CONTROL1;
+    ctrl1 &= ~C1_CLK_EN;
+    *EMMC_CONTROL1 = ctrl1;
+    sd_delay_ms(10);
+    
+    // Calculate divider
+    uint32_t div = base_clock / freq;
+    if (div < 2) div = 2;
+    if (div > 0x3FF) div = 0x3FF;
+    
+    uart_puts("SD: Clock divider = ");
+    uart_puthex(div);
+    uart_puts("\n");
+    
+    // Set divider
+    ctrl1 = *EMMC_CONTROL1;
+    ctrl1 &= ~0xFFE0;
+    ctrl1 |= (div & 0xFF) << 8;
+    ctrl1 |= ((div >> 8) & 0x3) << 6;
+    *EMMC_CONTROL1 = ctrl1;
+    sd_delay_ms(10);
+    
+    // Enable clock
+    ctrl1 |= C1_CLK_EN;
+    *EMMC_CONTROL1 = ctrl1;
+    
+    // Wait for stable
+    int timeout = 10000;
+    while (!(*EMMC_CONTROL1 & C1_CLK_STABLE) && timeout--) {
+        sd_delay_us(10);
+    }
+    
+    if (timeout <= 0) {
+        uart_puts("SD: Clock not stable\n");
+        return SD_TIMEOUT;
+    }
+    
+    uart_puts("SD: Clock stable\n");
+    return SD_OK;
+}
+
+int sd_init(void) {
+    int retries;
+    
+    uart_puts("\n=== SD Card Init (EMMC) ===\n");
+    
+    // CRITICAL: Power on SD card via mailbox
+    if (sd_power_on() != 0) {
+        uart_puts("SD: Failed to power on\n");
+        return SD_ERROR;
+    }
+    
+    sd_delay_ms(100);
+    
+    // Setup GPIO
+    sd_gpio_init();
+    
+    // Check version
+    uint32_t ver = (*EMMC_SLOTISR_VER >> 16) & 0xFF;
+    uart_puts("SD: EMMC version = ");
+    uart_puthex(ver);
+    uart_puts("\n");
+    
+    // Reset controller
+    *EMMC_CONTROL0 = 0;
+    *EMMC_CONTROL1 = C1_SRST_HC;
+    
+    int timeout = 10000;
+    while ((*EMMC_CONTROL1 & C1_SRST_HC) && timeout--) {
+        sd_delay_us(10);
+    }
+    if (timeout <= 0) {
+        uart_puts("SD: Reset timeout\n");
+        return SD_TIMEOUT;
+    }
+    uart_puts("SD: Controller reset OK\n");
+    
+    // Setup clock and timeout
+    *EMMC_CONTROL1 = C1_CLK_INTLEN | C1_TOUNIT_MAX;
+    sd_delay_ms(10);
+    
+    // Set slow clock for init (400 kHz)
+    if (sd_set_clock(400000) != SD_OK) {
+        uart_puts("SD: Clock setup failed\n");
+        return SD_ERROR;
+    }
+    
+    // Enable interrupts
+    *EMMC_IRPT_EN = 0;
+    *EMMC_IRPT_MASK = INT_ALL_MASK;
+    *EMMC_INTERRUPT = INT_ALL_MASK;
+    
+    sd_delay_ms(100);
+    
+    // CMD0 - Go idle (no response expected)
+    uart_puts("SD: CMD0\n");
+    *EMMC_ARG1 = 0;
+    *EMMC_CMDTM = (CMD_GO_IDLE << 24);
+    sd_delay_ms(50);
+    *EMMC_INTERRUPT = INT_ALL_MASK;
+    
+    // CMD8 - Interface condition
+    uart_puts("SD: CMD8\n");
+    int sd_v2 = 0;
+    uint32_t cmd8 = (CMD_SEND_IF_COND << 24) | CMD_RSPNS_48;
+    if (sd_send_cmd(cmd8, 0x1AA) == SD_OK) {
+        uint32_t resp = *EMMC_RESP0;
+        uart_puts("SD: CMD8 resp = ");
+        uart_puthex(resp);
+        uart_puts("\n");
+        if ((resp & 0xFFF) == 0x1AA) {
+            uart_puts("SD: v2.0 card detected\n");
+            sd_v2 = 1;
+        }
+    } else {
+        uart_puts("SD: CMD8 failed (v1 card?)\n");
+    }
+    
+    // ACMD41 - Send operating condition
+    uart_puts("SD: ACMD41 loop\n");
     retries = 100;
     uint32_t ocr = 0;
     uint32_t acmd41_arg = sd_v2 ? 0x40FF8000 : 0x00FF8000;
+    uint32_t acmd41 = (ACMD_SEND_OP_COND << 24) | CMD_RSPNS_48;
     
     do {
-        if (sd_send_acmd(ACMD_SEND_OP_COND, acmd41_arg, 0) == SD_OK) {
-            ocr = *SDRSP0;
-            if (ocr & 0x80000000) break;
+        if (sd_send_acmd(acmd41, acmd41_arg) == SD_OK) {
+            ocr = *EMMC_RESP0;
+            if (ocr & 0x80000000) {
+                uart_puts("SD: Card ready, OCR = ");
+                uart_puthex(ocr);
+                uart_puts("\n");
+                break;
+            }
         }
         sd_delay_ms(50);
     } while (retries--);
     
     if (retries <= 0) {
-        uart_puts("SD: ACMD41 timeout\n");
+        uart_puts("SD: ACMD41 timeout - card not ready\n");
         return SD_TIMEOUT;
     }
     
     sd_high_capacity = (ocr & 0x40000000) ? 1 : 0;
     uart_puts(sd_high_capacity ? "SD: SDHC card\n" : "SD: SDSC card\n");
     
-    // CMD2 - Get CID (State: Identification)
-    uart_puts("SD: CMD2...\n");
-    if (sd_send_cmd(CMD_ALL_SEND_CID, 0, SDCMD_LONG_RESPONSE) != SD_OK) {
+    // CMD2 - Get CID
+    uart_puts("SD: CMD2\n");
+    uint32_t cmd2 = (CMD_ALL_SEND_CID << 24) | CMD_RSPNS_136;
+    if (sd_send_cmd(cmd2, 0) != SD_OK) {
+        uart_puts("SD: CMD2 failed\n");
         return SD_ERROR;
     }
     
-    // CMD3 - Get RCA (State: Stand-by)
-    uart_puts("SD: CMD3...\n");
-    if (sd_send_cmd(CMD_SEND_REL_ADDR, 0, 0) != SD_OK) {
+    // CMD3 - Get RCA
+    uart_puts("SD: CMD3\n");
+    uint32_t cmd3 = (CMD_SEND_REL_ADDR << 24) | CMD_RSPNS_48;
+    if (sd_send_cmd(cmd3, 0) != SD_OK) {
+        uart_puts("SD: CMD3 failed\n");
         return SD_ERROR;
     }
-    sd_rca = *SDRSP0 & 0xFFFF0000;
+    sd_rca = *EMMC_RESP0 & 0xFFFF0000;
+    uart_puts("SD: RCA = ");
+    uart_puthex(sd_rca);
+    uart_puts("\n");
     
-    /* ------------------------------------------------ */
-    /* === NEW: CMD9 and Sector Calculation === */
-    /* ------------------------------------------------ */
-    
-    if (sd_send_cmd(CMD_SEND_CSD, sd_rca, SDCMD_LONG_RESPONSE) != SD_OK) {
-        uart_puts("SD: CMD9 failed\n");
-        return SD_ERROR;
-    }
-
-    // Read 128-bit CSD
-    csd[0] = *SDRSP0;
-    csd[1] = *SDRSP1;
-    csd[2] = *SDRSP2;
-    csd[3] = *SDRSP3;
-
-    // Calculate total sectors and store globally
-    sd_total_sectors = 0;
-    uint32_t csd_structure = (csd[3] >> 30) & 0x3;
-
-    if (csd_structure == 1) {
-        /* SDHC / SDXC (CSD v2.0) */
-        uint32_t c_size = ((csd[2] & 0x3F) << 16) | ((csd[1] >> 16) & 0xFFFF);
-        sd_total_sectors = (c_size + 1) * 1024;
-        uart_puts("SD: Sector count (SDHC) calculated.\n");
-    } else {
-        /* SDSC (CSD v1.0) */
-        uint32_t c_size = ((csd[2] >> 30) & 0x3) | ((csd[1] & 0x3FF) << 2) | ((csd[2] >> 16) & 0x3);
-        uint32_t c_size_mult = ((csd[1] >> 15) & 0x7);
-        uint32_t read_bl_len = (csd[2] >> 8) & 0xF;
+    // CMD9 - Get CSD
+    uart_puts("SD: CMD9\n");
+    uint32_t cmd9 = (CMD_SEND_CSD << 24) | CMD_RSPNS_136;
+    if (sd_send_cmd(cmd9, sd_rca) == SD_OK) {
+        uint32_t csd[4];
+        csd[0] = *EMMC_RESP0;
+        csd[1] = *EMMC_RESP1;
+        csd[2] = *EMMC_RESP2;
+        csd[3] = *EMMC_RESP3;
         
-        uint32_t block_len = 1 << read_bl_len;
-        uint32_t mult = 1 << (c_size_mult + 2);
-        uint32_t block_count = (c_size + 1) * mult;
-
-        sd_total_sectors = (block_count * block_len) / 512;
-        uart_puts("SD: Sector count (SDSC) calculated.\n");
+        uint32_t csd_struct = (csd[3] >> 30) & 0x3;
+        if (csd_struct == 1) {
+            uint32_t c_size = ((csd[2] & 0x3F) << 16) | ((csd[1] >> 16) & 0xFFFF);
+            sd_total_sectors = (c_size + 1) * 1024;
+            uart_puts("SD: Sectors = ");
+            uart_puthex(sd_total_sectors);
+            uart_puts("\n");
+        }
     }
     
-    /* ------------------------------------------------ */
-    /* === END: CMD9 and Sector Calculation === */
-    /* ------------------------------------------------ */
-
-    // CMD7 - Select card (State: Transfer)
-    uart_puts("SD: CMD7...\n");
-    if (sd_send_cmd(CMD_SELECT_CARD, sd_rca, SDCMD_BUSY_CMD) != SD_OK) {
+    // CMD7 - Select card
+    uart_puts("SD: CMD7\n");
+    uint32_t cmd7 = (CMD_SELECT_CARD << 24) | CMD_RSPNS_48B;
+    if (sd_send_cmd(cmd7, sd_rca) != SD_OK) {
+        uart_puts("SD: CMD7 failed\n");
         return SD_ERROR;
     }
-
-    uart_puts("SD: ACMD6 (Set 4-bit bus)...\n");
-    if (sd_send_acmd(ACMD_SET_BUS_WIDTH, 2, 0) != SD_OK) {
-        uart_puts("SD: ACMD6 failed\n");
-        return SD_ERROR;
-    }
-
-    // 2. Tell the Controller to use 4-bit bus (SDHCFG register)
-    uint32_t hcfg = *SDHCFG;
-    hcfg |= 1; 
-    *SDHCFG = hcfg;
-    
-    // Set block length for SDSC
-    if (!sd_high_capacity) {
-        sd_send_cmd(CMD_SET_BLOCKLEN, 512, 0);
-    }
+    uart_puts("SD: Card selected\n");
     
     // Increase clock speed
-    *SDCDIV = 4;  // ~25MHz
+    sd_set_clock(25000000);
     
     // Set block size
-    *SDHBCT = 512;
+    *EMMC_BLKSIZECNT = 512;
     
-    uart_puts("=== SD Ready ===\n\n");
+    uart_puts("=== SD Ready (EMMC) ===\n\n");
     return SD_OK;
 }
 
-// And then, your sd_get_sector_count function becomes trivial:
-uint32_t sd_get_sector_count(void)
-{
+uint32_t sd_get_sector_count(void) {
     return sd_total_sectors;
 }
 
-int sd_read(uint32_t sector, uint32_t count, uint8_t *buffer)
-{
-    uint32_t addr = sd_high_capacity ? sector : sector * 512;
+int sd_read(uint32_t sector, uint32_t count, uint8_t *buffer) {
+    uint32_t addr = sd_high_capacity ? sector : (sector * 512);
+    uint32_t *buf = (uint32_t *)buffer;
 
     for (uint32_t blk = 0; blk < count; blk++) {
-
-        *SDHSTS = SDHSTS_CLEAR_MASK;
-        *SDHBCT = 512;
-        *SDHBLC = 1;
-
-        *SDARG = addr + (sd_high_capacity ? blk : blk * 512);
-        *SDCMD = CMD_READ_SINGLE | SDCMD_NEW_FLAG | SDCMD_READ_CMD;
-
         int timeout = 100000;
-        while ((*SDCMD & SDCMD_NEW_FLAG) && timeout--)
+        while ((*EMMC_STATUS & SR_DAT_INHIBIT) && timeout--) {
             sd_delay_us(1);
-
-        if (timeout <= 0 || (*SDCMD & SDCMD_FAIL_FLAG)) {
-            *SDHSTS = SDHSTS_ERROR_MASK;
-            return SD_ERROR;
         }
+        if (timeout <= 0) return SD_TIMEOUT;
 
-        int remaining = 512;
+        *EMMC_BLKSIZECNT = (1 << 16) | 512;
+        *EMMC_INTERRUPT = INT_ALL_MASK;
+        *EMMC_ARG1 = addr + (sd_high_capacity ? blk : blk * 512);
 
-        while (remaining > 0) {
+        uint32_t cmd = (CMD_READ_SINGLE << 24) | CMD_RSPNS_48 | CMD_ISDATA | CMD_DAT_DIR_CH;
+        *EMMC_CMDTM = cmd;
 
-            int fifo =
-                (*SDEDM >> SDEDM_FIFO_FILL_SHIFT) & SDEDM_FIFO_FILL_MASK;
-
-            if (!fifo)
-                continue;
-
-            if (fifo > remaining)
-                fifo = remaining;
-
-            for (int i = 0; i < fifo; i++) {
-                *buffer++ = *(volatile uint8_t *)SDDATA;
-            }
-
-            remaining -= fifo;
-        }
-
-        timeout = 100000;
-        while (!(*SDHSTS & SDHSTS_BLOCK_IRPT) && timeout--) {
-            if (*SDHSTS & SDHSTS_ERROR_MASK) {
-                *SDHSTS = SDHSTS_ERROR_MASK;
-                return SD_ERROR;
-            }
-        }
-    }
-
-    return SD_OK;
-}
-
-
-
-int sd_write(uint32_t sector, uint32_t count, const uint8_t *buffer)
-{
-    uint32_t addr = sd_high_capacity ? sector : (sector * 512);
-    int timeout;
-
-    for (uint32_t block = 0; block < count; block++) {
-
-        *SDHSTS = SDHSTS_CLEAR_MASK;
-        *SDHBCT = 512;
-        *SDHBLC = 1;
-
-        *SDARG = addr + (sd_high_capacity ? block : block * 512);
-        *SDCMD = CMD_WRITE_SINGLE | SDCMD_NEW_FLAG | SDCMD_WRITE_CMD;
-
-        timeout = 100000;
-        while ((*SDCMD & SDCMD_NEW_FLAG) && timeout--) {
+        timeout = 1000000;
+        while (!(*EMMC_INTERRUPT & (INT_CMD_DONE | INT_ERROR_MASK)) && timeout--) {
             sd_delay_us(1);
         }
 
-        if (timeout <= 0 || (*SDCMD & SDCMD_FAIL_FLAG)) {
-            uart_puts("SD: WRITE CMD failed\n");
+        uint32_t irq = *EMMC_INTERRUPT;
+        if (timeout <= 0 || (irq & INT_ERROR_MASK)) {
+            uart_puts("SD: Read CMD error, IRQ=");
+            uart_puthex(irq);
+            uart_puts("\n");
+            *EMMC_INTERRUPT = irq;
             return SD_ERROR;
         }
+        *EMMC_INTERRUPT = INT_CMD_DONE;
 
-        const uint8_t *buf = buffer + block * 512;
-
-        /* Write 512 data bytes */
-        for (int i = 0; i < 512; i++) {
+        uint32_t *dest = &buf[blk * 128];
+        for (int i = 0; i < 128; i++) {
             timeout = 100000;
-            while (timeout--) {
-                uint32_t edm = *SDEDM;
-                uint32_t fifo_fill =
-                    (edm >> SDEDM_FIFO_FILL_SHIFT) & SDEDM_FIFO_FILL_MASK;
-
-                if (fifo_fill < SDDATA_FIFO_WORDS)
-                    break;
-
+            while (!(*EMMC_STATUS & SR_READ_AVAILABLE) && timeout--) {
                 sd_delay_us(1);
             }
-
-            if (timeout <= 0) {
-                uart_puts("SD: FIFO timeout\n");
-                return SD_TIMEOUT;
-            }
-
-            *(volatile uint8_t*)SDDATA = buf[i];
+            if (timeout <= 0) return SD_TIMEOUT;
+            dest[i] = *EMMC_DATA;
         }
 
-        /* Wait for block complete */
         timeout = 1000000;
-        while (!(*SDHSTS & SDHSTS_BLOCK_IRPT) && timeout--) {
-            if (*SDHSTS & SDHSTS_ERROR_MASK) {
-                uart_puts("SD: WRITE block error\n");
-                *SDHSTS = SDHSTS_ERROR_MASK;
-                return SD_ERROR;
-            }
+        while (!(*EMMC_INTERRUPT & INT_DATA_DONE) && timeout--) {
             sd_delay_us(1);
         }
+        *EMMC_INTERRUPT = INT_DATA_DONE;
     }
 
     return SD_OK;
 }
 
-void test_sd_write(void) {
-    uart_puts("\n=== SD WRITE TEST ===\n");
+int sd_write(uint32_t sector, uint32_t count, const uint8_t *buffer) {
+    uint32_t addr = sd_high_capacity ? sector : (sector * 512);
+    const uint32_t *buf = (const uint32_t *)buffer;
 
-    uint8_t write_buf[512];
-    uint8_t read_buf[512];
-    uint8_t backup_buf[512];
-
-    // Step 1: read original sector
-    if (sd_read(TEST_SECTOR, 1, backup_buf) != SD_OK) {
-        uart_puts("Backup read failed!\n");
-        return;
-    }
-
-    // Step 2: fill test pattern
-    for (int i = 0; i < 512; i++) {
-        write_buf[i] = (uint8_t)(i & 0xFF);  // 00 01 02 ... FF
-    }
-
-    // Step 3: write test pattern
-    if (sd_write(TEST_SECTOR, 1, write_buf) != SD_OK) {
-        uart_puts("Write failed!\n");
-        return;
-    }
-
-    // Step 4: read back
-    if (sd_read(TEST_SECTOR, 1, read_buf) != SD_OK) {
-        uart_puts("Read-back failed!\n");
-        return;
-    }
-
-    // Step 5: verify
-    for (int i = 0; i < 512; i++) {
-        if (read_buf[i] != write_buf[i]) {
-            uart_puts("VERIFY FAILED at byte ");
-            uart_puthex(i);
-            uart_puts("\n");
-            goto restore;
+    for (uint32_t blk = 0; blk < count; blk++) {
+        int timeout = 100000;
+        while ((*EMMC_STATUS & SR_DAT_INHIBIT) && timeout--) {
+            sd_delay_us(1);
         }
+        if (timeout <= 0) return SD_TIMEOUT;
+
+        *EMMC_BLKSIZECNT = (1 << 16) | 512;
+        *EMMC_INTERRUPT = INT_ALL_MASK;
+        *EMMC_ARG1 = addr + (sd_high_capacity ? blk : blk * 512);
+
+        uint32_t cmd = (CMD_WRITE_SINGLE << 24) | CMD_RSPNS_48 | CMD_ISDATA | CMD_DAT_DIR_HC;
+        *EMMC_CMDTM = cmd;
+
+        timeout = 1000000;
+        while (!(*EMMC_INTERRUPT & (INT_CMD_DONE | INT_ERROR_MASK)) && timeout--) {
+            sd_delay_us(1);
+        }
+
+        uint32_t irq = *EMMC_INTERRUPT;
+        if (timeout <= 0 || (irq & INT_ERROR_MASK)) {
+            uart_puts("SD: Write CMD error, IRQ=");
+            uart_puthex(irq);
+            uart_puts("\n");
+            *EMMC_INTERRUPT = irq;
+            return SD_ERROR;
+        }
+        *EMMC_INTERRUPT = INT_CMD_DONE;
+
+        const uint32_t *src = &buf[blk * 128];
+        for (int i = 0; i < 128; i++) {
+            timeout = 100000;
+            while (!(*EMMC_STATUS & SR_WRITE_AVAILABLE) && timeout--) {
+                sd_delay_us(1);
+            }
+            if (timeout <= 0) return SD_TIMEOUT;
+            *EMMC_DATA = src[i];
+        }
+
+        timeout = 1000000;
+        while (!(*EMMC_INTERRUPT & INT_DATA_DONE) && timeout--) {
+            sd_delay_us(1);
+        }
+        *EMMC_INTERRUPT = INT_DATA_DONE;
     }
 
-    uart_puts("WRITE TEST PASSED !!\n");
-
-restore:
-    // Step 6: restore original data
-    sd_write(TEST_SECTOR, 1, backup_buf);
+    return SD_OK;
 }
 
 void test_sd_read(){

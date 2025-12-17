@@ -14,7 +14,6 @@
 *.swp
 *.swo
 *~
-.vscode/
 .idea/
 
 # OS specific
@@ -27,3 +26,7 @@ Thumbs.db
 
 # Debug files
 *.dSYM/
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
