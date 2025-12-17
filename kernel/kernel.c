@@ -46,6 +46,8 @@ void kernel_main(void) {
         while (1);
     }
 
+    test_sd_read();
+
     /* -------- FATFS MOUNT -------- */
     static FATFS fs;
     FRESULT res;

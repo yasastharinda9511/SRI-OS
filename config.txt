@@ -1,17 +1,14 @@
 # Boot our kernel
 kernel=kernel.img
-
 # Disable rainbow splash
 disable_splash=1
-
 # Set ARM in 32-bit mode
 arm_64bit=0
-
 # IMPORTANT: Enable UART (required for serial output!)
 enable_uart=1
-
 # Fix core frequency for stable UART baud rate
 core_freq=250
-
 # Optional: Disable Bluetooth to free UART
 dtoverlay=disable-bt
+# Release SD card to ARM after boot
+dtparam=sd_poll_once=on
